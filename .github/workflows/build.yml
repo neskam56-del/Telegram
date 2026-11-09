@@ -51,8 +51,12 @@ jobs:
         run: |
           mkdir -p native_libs
           cd native_libs
-          curl -L -o tf.apk https://github.com/Telegram-FOSS-Team/Telegram-FOSS/releases/download/v10.14.3/TF-BETA-THERMATK-v10.14.3.apk
-          unzip -q tf.apk "lib/*"
+          curl -L -A "Mozilla/5.0 (Android; Mobile)" -o official.apk "https://telegram.org/dl/android/apk"
+          if [ ! -s official.apk ] || [ $(stat -c%s official.apk) -lt 10000000 ]; then
+            echo "Error: official.apk download failed or too small!"
+            exit 1
+          fi
+          unzip -q official.apk "lib/*"
           cd ..
           mkdir -p TMessagesProj/src/main/jniLibs
           cp -r native_libs/lib/* TMessagesProj/src/main/jniLibs/
@@ -62,6 +66,7 @@ jobs:
           fi
           echo "Native libraries placed in jniLibs:"
           ls -la TMessagesProj/src/main/jniLibs/
+          ls -la TMessagesProj/src/main/jniLibs/arm64-v8a/
 
       - name: Cleanly disable externalNativeBuild in build.gradle
         run: |
