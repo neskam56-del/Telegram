@@ -85,7 +85,7 @@ public class AntiDeleteManager {
             values.put("channel_id", channelId);
             values.put("account", currentAccount);
             values.put("deleted_time", System.currentTimeMillis());
-            sqlDb.insertWithOnflict("deleted_messages", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+            sqlDb.insertWithOnConflict("deleted_messages", null, values, SQLiteDatabase.CONFLICT_REPLACE);
         } catch (Exception e) {
             FileLog.e(TAG + ": error saving deleted message id", e);
         }

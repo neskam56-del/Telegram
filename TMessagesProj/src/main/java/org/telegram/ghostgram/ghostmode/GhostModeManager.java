@@ -4,19 +4,11 @@ import org.telegram.ghostgram.GhostConfig;
 import org.telegram.messenger.FileLog;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_account;
 
 /**
  * GhostModeManager — перехватывает исходящие запросы к серверу Telegram
  * и блокирует те, которые раскрывают присутствие пользователя.
- *
- * Блокируемые запросы при включённом Ghost Mode:
- * - TL_messages_readHistory          → скрывает "прочитано" (синие галочки)
- * - TL_messages_readEncryptedHistory → скрывает "прочитано" в секретных чатах
- * - TL_messages_readDiscussion       → скрывает прочтение в обсуждениях
- * - TL_messages_setTyping            → скрывает "печатает..."
- * - TL_channels_readHistory          → скрывает прочтение в каналах/группах
- * - TL_messages_readMessageContents  → скрывает прочтение голосовых/видео
- * - TL_messages_readReactions        → скрывает просмотр реакций
  */
 public class GhostModeManager {
 
@@ -78,7 +70,7 @@ public class GhostModeManager {
     }
 
     /**
-     * Проверяет, нужно ли подменить статус "онлайн" при отправке TL_account_updateStatus.
+     * Проверяет, нужно ли подменить статус "онлайн" при отправке updateStatus.
      * Если Ghost Mode включён и hideOnlineStatus = true, всегда отправляем offline = true.
      *
      * @param object TLObject
@@ -89,8 +81,8 @@ public class GhostModeManager {
             return null;
         }
 
-        if (object instanceof TLRPC.TL_account_updateStatus) {
-            TLRPC.TL_account_updateStatus updateStatus = (TLRPC.TL_account_updateStatus) object;
+        if (object instanceof TL_account.updateStatus) {
+            TL_account.updateStatus updateStatus = (TL_account.updateStatus) object;
             // Всегда говорим серверу что мы оффлайн
             updateStatus.offline = true;
             FileLog.d(TAG + ": forced offline status");
@@ -100,4 +92,3 @@ public class GhostModeManager {
         return null;
     }
 }
-
