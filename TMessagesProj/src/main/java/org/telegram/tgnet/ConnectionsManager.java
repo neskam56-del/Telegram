@@ -420,6 +420,13 @@ public class ConnectionsManager extends BaseController {
     }
 
     private void sendRequestInternal(TLObject object, RequestDelegate onComplete, RequestDelegateTimestamp onCompleteTimestamp, QuickAckDelegate onQuickAck, WriteToSocketDelegate onWriteToSocket, int flags, int datacenterId, int connectionType, boolean immediate, int requestToken) {
+        if (org.telegram.ghostgram.ghostmode.GhostModeManager.shouldBlockRequest(object)) {
+            return;
+        }
+        TLObject modified = org.telegram.ghostgram.ghostmode.GhostModeManager.modifyRequestIfNeeded(object);
+        if (modified != null) {
+            object = modified;
+        }
         if (BuildVars.LOGS_ENABLED) {
             FileLog.d("send request " + object + " with token = " + requestToken);
         }

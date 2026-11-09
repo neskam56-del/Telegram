@@ -74,6 +74,9 @@ public class FlagSecureReason {
     }
 
     public static boolean isSecuredNow(Window window) {
+        if (org.telegram.ghostgram.GhostConfig.allowScreenshots) {
+            return false;
+        }
         return currentSecureReasons != null && currentSecureReasons.get(window) != null;
     }
 

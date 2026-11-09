@@ -132,6 +132,8 @@ import java.util.regex.Pattern;
 import me.vkryl.core.BitwiseUtils;
 
 public class MessageObject {
+    public boolean isGhostDeleted = false;
+    public boolean isGhostEdited = false;
     private static final int MESSAGE_ID_RESERVED_BITS_MASK = 0x70000000;
     private static final int MESSAGE_ID_EPHEMERAL_BITS_MASK = 0x60000000;
 

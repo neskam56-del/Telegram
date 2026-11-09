@@ -1758,6 +1758,9 @@ public class SharedConfig {
     }
 
     public static boolean chatBlurEnabled() {
+        if (org.telegram.ghostgram.GhostConfig.disableBlur) {
+            return false;
+        }
         return canBlurChat() && LiteMode.isEnabled(LiteMode.FLAG_CHAT_BLUR);
     }
 

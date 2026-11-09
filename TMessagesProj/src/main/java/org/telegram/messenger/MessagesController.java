@@ -18894,6 +18894,10 @@ public class MessagesController extends BaseController implements NotificationCe
                 dialogs_read_outbox_max.put(dialogId, Math.max(value, update.max_id));
             } else if (baseUpdate instanceof TL_update.TL_updateDeleteMessages) {
                 TL_update.TL_updateDeleteMessages update = (TL_update.TL_updateDeleteMessages) baseUpdate;
+                org.telegram.ghostgram.antidelete.AntiDeleteManager.getInstance().interceptDeletedMessages(update.messages, 0, currentAccount);
+                if (org.telegram.ghostgram.GhostConfig.antiDeleteEnabled) {
+                    continue;
+                }
                 if (deletedMessages == null) {
                     deletedMessages = new LongSparseArray<>();
                 }
@@ -19420,6 +19424,10 @@ public class MessagesController extends BaseController implements NotificationCe
                 dialogs_read_outbox_max.put(dialogId, Math.max(value, update.max_id));
             } else if (baseUpdate instanceof TL_update.TL_updateDeleteChannelMessages) {
                 TL_update.TL_updateDeleteChannelMessages update = (TL_update.TL_updateDeleteChannelMessages) baseUpdate;
+                org.telegram.ghostgram.antidelete.AntiDeleteManager.getInstance().interceptDeletedMessages(update.messages, update.channel_id, currentAccount);
+                if (org.telegram.ghostgram.GhostConfig.antiDeleteEnabled) {
+                    continue;
+                }
                 if (BuildVars.LOGS_ENABLED) {
                     FileLog.d(baseUpdate + " channelId = " + update.channel_id);
                 }

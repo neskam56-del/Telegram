@@ -416,6 +416,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         }
 
         instance = this;
+        org.telegram.ghostgram.GhostConfig.init(this);
+        org.telegram.ghostgram.antidelete.AntiDeleteManager.getInstance().init(this);
+        org.telegram.ghostgram.ui.Display120HzFix.applyHighRefreshRate(this);
         ApplicationLoader.postInitApplication();
         AndroidUtilities.checkDisplaySize(this, getResources().getConfiguration());
         currentAccount = UserConfig.selectedAccount;

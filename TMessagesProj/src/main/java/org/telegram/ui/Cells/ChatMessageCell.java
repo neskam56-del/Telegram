@@ -11855,6 +11855,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                  boolean topNear,
                                  boolean firstInChat,
                                  boolean lastInChatList) {
+        if (messageObject != null && org.telegram.ghostgram.GhostConfig.antiDeleteEnabled) {
+            messageObject.isGhostDeleted = org.telegram.ghostgram.antidelete.AntiDeleteManager.getInstance().isMessageDeleted(messageObject.getId());
+        }
         if (attachedToWindow && !frozen) {
             setMessageContent(messageObject, groupedMessages, bottomNear, topNear, firstInChat, lastInChatList);
         } else {
@@ -15635,7 +15638,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         } else {
             currentTimeString = timeString;
         }
-        if (currentMessageObject.isStakedDice()) {
+        if (currentMessageObject.isGhostDeleted && org.telegram.ghostgram.GhostConfig.antiDeleteShowIcon) {
+            currentTimeString = "🗑 " + currentTimeString;
+        }
             currentTimeString = TextUtils.concat("💎", StarsIntroActivity.formatTON(currentMessageObject.getStakedDiceAmount()), "  ", currentTimeString);
             currentTimeString = StarsIntroActivity.replaceDiamond(currentTimeString, 0.55f, null, 0, dp(-.33f), 1.05f);
         }
