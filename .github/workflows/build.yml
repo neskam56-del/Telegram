@@ -21,14 +21,20 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Clone media submodule at exact commit
+      - name: Clone required Java submodules
         run: |
+          # 1. media submodule (for core_settings.gradle)
           git clone https://github.com/Arseny271/media.git TMessagesProj_Modules/media
           cd TMessagesProj_Modules/media
           git checkout 09b6c97c0d691c50cd4541e1573995d4066d6f5c
           cd ../..
-          ls -la TMessagesProj_Modules/media/
-          echo "core_settings.gradle exists: $(test -f TMessagesProj_Modules/media/core_settings.gradle && echo YES || echo NO)"
+
+          # 2. jlatexmath submodule (needed by settings.gradle: project(':jlatexmath').projectDir = file('TMessagesProj/lib/jlatexmath/jlatexmath'))
+          mkdir -p TMessagesProj/lib
+          git clone --depth 1 https://github.com/dkaraush/jlatexmath-android.git TMessagesProj/lib/jlatexmath
+          
+          echo "Submodules checked out:"
+          ls -la TMessagesProj/lib/jlatexmath/
 
       - name: Prepare API_KEYS
         run: |
@@ -50,8 +56,8 @@ jobs:
             mkdir -p TMessagesProj_App/src/main/jniLibs
             cp -r native_libs/lib/* TMessagesProj_App/src/main/jniLibs/
           fi
-          echo "Native libraries placed:"
-          ls TMessagesProj/src/main/jniLibs/
+          echo "Native libraries placed in jniLibs:"
+          ls -la TMessagesProj/src/main/jniLibs/
 
       - name: Disable native CMake build in Gradle
         run: |
