@@ -73,6 +73,7 @@ android {
     packagingOptions {
         jniLibs {
             useLegacyPackaging = true
+            pickFirsts += ['**/*.so']
         }
     }
 
