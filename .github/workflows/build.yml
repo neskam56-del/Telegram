@@ -21,7 +21,7 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Clone required Java submodules
+      - name: Setup submodules and create directories
         run: |
           # 1. media submodule (for core_settings.gradle)
           git clone https://github.com/Arseny271/media.git TMessagesProj_Modules/media
@@ -29,12 +29,16 @@ jobs:
           git checkout 09b6c97c0d691c50cd4541e1573995d4066d6f5c
           cd ../..
 
-          # 2. jlatexmath submodule (needed by settings.gradle: project(':jlatexmath').projectDir = file('TMessagesProj/lib/jlatexmath/jlatexmath'))
+          # 2. create media3 directory so Gradle project ':TMessagesProj_Modules:media3' is happy
+          mkdir -p TMessagesProj_Modules/media3
+
+          # 3. jlatexmath submodule (needed by settings.gradle)
           mkdir -p TMessagesProj/lib
           git clone --depth 1 https://github.com/dkaraush/jlatexmath-android.git TMessagesProj/lib/jlatexmath
-          
-          echo "Submodules checked out:"
-          ls -la TMessagesProj/lib/jlatexmath/
+
+          echo "Directories verified:"
+          ls -la TMessagesProj_Modules/
+          ls -la TMessagesProj/lib/
 
       - name: Prepare API_KEYS
         run: |
