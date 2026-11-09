@@ -63,21 +63,41 @@ jobs:
           echo "Native libraries placed in jniLibs:"
           ls -la TMessagesProj/src/main/jniLibs/
 
-      - name: Disable native CMake build in Gradle
+      - name: Cleanly disable externalNativeBuild in build.gradle
         run: |
-          python3 -c '
-          import re
-          for f in ["TMessagesProj/build.gradle", "TMessagesProj_App/build.gradle", "build.gradle"]:
-              try:
-                  with open(f, "r") as fp:
-                      content = fp.read()
-                  content = re.sub(r"externalNativeBuild\s*\{[^}]*\}", "", content)
-                  with open(f, "w") as fp:
-                      fp.write(content)
-                  print("Patched:", f)
-              except Exception as e:
-                  print("Skip:", f, e)
-          '
+          python3 -c "
+          import os
+
+          def clean_strip(file_path):
+              if not os.path.exists(file_path):
+                  return
+              with open(file_path, 'r', encoding='utf-8') as f:
+                  lines = f.readlines()
+              out = []
+              skip_until_depth = None
+              current_depth = 0
+              for line in lines:
+                  stripped = line.strip()
+                  open_count = line.count('{')
+                  close_count = line.count('}')
+                  if 'externalNativeBuild {' in stripped or 'externalNativeBuild{' in stripped:
+                      skip_until_depth = current_depth
+                      current_depth += (open_count - close_count)
+                      continue
+                  if skip_until_depth is not None:
+                      current_depth += (open_count - close_count)
+                      if current_depth <= skip_until_depth:
+                          skip_until_depth = None
+                      continue
+                  current_depth += (open_count - close_count)
+                  out.append(line)
+              with open(file_path, 'w', encoding='utf-8') as f:
+                  f.writelines(out)
+              print('Clean stripped:', file_path)
+
+          for f in ['TMessagesProj/build.gradle', 'TMessagesProj_App/build.gradle', 'build.gradle']:
+              clean_strip(f)
+          "
 
       - name: Build Debug APK
         run: |
