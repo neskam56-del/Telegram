@@ -9,10 +9,10 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout code with submodules
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           fetch-depth: 1
 
       - name: Set up JDK 17
@@ -20,6 +20,13 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '17'
+
+      - name: Clone media3 submodule specifically
+        run: |
+          git clone --depth 1 https://github.com/Arseny271/media.git TMessagesProj_Modules/media
+          # Also symlink media3 folder so Gradle sees it properly
+          ln -s "$(pwd)/TMessagesProj_Modules/media" "$(pwd)/TMessagesProj_Modules/media3"
+          ls -la TMessagesProj_Modules/
 
       - name: Prepare API_KEYS
         run: |
