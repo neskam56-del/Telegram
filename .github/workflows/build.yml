@@ -1,0 +1,72 @@
+name: Build Ghostgram APK
+
+on:
+  push:
+    branches: [ ghostgram ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Prepare API_KEYS
+        run: |
+          echo "APP_ID=28753335" > API_KEYS
+          echo "APP_HASH=365e92f4e601d19bb8cf7100906aca7b" >> API_KEYS
+          cp API_KEYS TMessagesProj/API_KEYS
+          if [ -d "TMessagesProj_App" ]; then cp API_KEYS TMessagesProj_App/API_KEYS; fi
+
+      - name: Download Prebuilt Native Libs
+        run: |
+          mkdir -p native_libs
+          cd native_libs
+          curl -L -o tf.apk https://github.com/Telegram-FOSS-Team/Telegram-FOSS/releases/download/v10.14.3/TF-BETA-THERMATK-v10.14.3.apk
+          unzip -q tf.apk "lib/*"
+          cd ..
+          mkdir -p TMessagesProj/src/main/jniLibs
+          cp -r native_libs/lib/* TMessagesProj/src/main/jniLibs/
+          if [ -d "TMessagesProj_App/src/main" ]; then
+            mkdir -p TMessagesProj_App/src/main/jniLibs
+            cp -r native_libs/lib/* TMessagesProj_App/src/main/jniLibs/
+          fi
+
+      - name: Disable native CMake build in Gradle
+        run: |
+          python3 -c '
+          import re
+          for f in ["TMessagesProj/build.gradle", "TMessagesProj_App/build.gradle", "build.gradle"]:
+              try:
+                  with open(f, "r") as fp:
+                      content = fp.read()
+                  content = re.sub(r"externalNativeBuild\s*\{[^}]*\}", "", content)
+                  with open(f, "w") as fp:
+                      fp.write(content)
+                  print("Patched:", f)
+              except Exception as e:
+                  print("Skip:", f, e)
+          '
+
+      - name: Build Debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleAfatDebug --stacktrace || ./gradlew assembleDebug --stacktrace
+
+      - name: Upload Ghostgram APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ghostgram-Android-APK
+          path: |
+            TMessagesProj/build/outputs/apk/**/*.apk
+            TMessagesProj_App/build/outputs/apk/**/*.apk
+            build/outputs/apk/**/*.apk
