@@ -70,6 +70,13 @@ android {
         localeFilters += ["zz"]
     }
 
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+            pickFirsts += ['**/*.so']
+        }
+    }
+
     signingConfigs {
         debug {
             storeFile file("../TMessagesProj/config/release.keystore")

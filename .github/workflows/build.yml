@@ -103,13 +103,13 @@ jobs:
       - name: Build Debug APK
         run: |
           chmod +x gradlew
-          ./gradlew assembleAfatDebug --stacktrace || ./gradlew assembleDebug --stacktrace
+          ./gradlew :TMessagesProj_App:assembleAfatDebug :TMessagesProj_AppStandalone:assembleAfatDebug -x test --stacktrace || ./gradlew assembleDebug -x test --stacktrace
 
       - name: Upload Ghostgram APK
         uses: actions/upload-artifact@v4
         with:
           name: Ghostgram-Android-APK
           path: |
-            TMessagesProj/build/outputs/apk/**/*.apk
             TMessagesProj_App/build/outputs/apk/**/*.apk
-            build/outputs/apk/**/*.apk
+            TMessagesProj_AppStandalone/build/outputs/apk/**/*.apk
+            **/build/outputs/apk/**/*.apk
