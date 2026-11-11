@@ -743,7 +743,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
         Theme.createDialogsResources(context);
         drawMonoforumAvatar = false;
         drawCommunityAvatar = false;
-        avatarImage.setRoundRadius(dp(26));
+        avatarImage.setRoundRadius(dp(org.telegram.ghostgram.GhostConfig.dialogAvatarRadius));
         for (int i = 0; i < thumbImage.length; ++i) {
             thumbImage[i] = new ImageReceiver(this);
             thumbImage[i].ignoreNotifications = true;
@@ -1069,6 +1069,9 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
 
     private int getCollapsedHeight() {
         int height = dp(useForceThreeLines || SharedConfig.useThreeLinesLayout ? heightThreeLines : heightDefault);
+        if (org.telegram.ghostgram.GhostConfig.compactDialogs) {
+            height -= dp(10);
+        }
         if (useSeparator || true) {
             height += 1;
         }
@@ -3303,7 +3306,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
             }
             drawMonoforumAvatar = false;
             drawCommunityAvatar = false;
-            avatarImage.setRoundRadius(dp(26));
+            avatarImage.setRoundRadius(dp(org.telegram.ghostgram.GhostConfig.dialogAvatarRadius));
             drawUnmute = false;
         } else {
             int oldUnreadCount = unreadCount;

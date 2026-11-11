@@ -28,6 +28,7 @@ import android.view.ViewGroup;
 import android.view.accessibility.AccessibilityEvent;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -54,6 +55,8 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
+import org.telegram.ghostgram.ModConfig;
+import org.telegram.ghostgram.ui.ModGlassBackground;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -124,6 +127,11 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     private MainTabsLayout tabsView;
     private BlurredBackgroundDrawable tabsViewBackground;
     private View fadeView;
+    private ImageView modSearchButton;
+    private ModGlassBackground modTabsGlass;
+    private boolean modGlassActive;
+    private boolean pendingModSearch;
+    private final RectF modPanelBounds = new RectF();
 
     public MainTabsActivity() {
         super();
@@ -287,6 +295,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     @Override
     public void onResume() {
         super.onResume();
+        applyModTabs();
         blur3_updateColors();
         checkContactsTabBadge();
         checkUnreadCount(true);
@@ -318,6 +327,8 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
     @Override
     public View createView(Context context) {
+        if (modTabsGlass != null) modTabsGlass.release();
+        modGlassActive = ModConfig.isGlassActive();
         super.createView(context);
         tabletLayout = false;
 
@@ -396,11 +407,57 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
         contentView.addView(fadeView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 0, Gravity.BOTTOM));
 
-        tabsViewWrapper = new FrameLayout(context);
-        tabsViewWrapper.setOnClickListener(v -> {});
+        tabsViewWrapper = new FrameLayout(context) {
+            @Override
+            protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+                super.onLayout(changed, left, top, right, bottom);
+                if (modGlassActive) {
+                    int available = getWidth() - getPaddingLeft() - getPaddingRight();
+                    int groupWidth = tabsView.getMeasuredWidth() + dp(64);
+                    int x = getPaddingLeft() + (available - groupWidth) / 2;
+                    int y = getHeight() - getPaddingBottom() - tabsView.getMeasuredHeight();
+                    tabsView.layout(x, y, x + tabsView.getMeasuredWidth(), y + tabsView.getMeasuredHeight());
+                    int searchX = x + tabsView.getMeasuredWidth() + dp(8);
+                    int searchY = y + (tabsView.getMeasuredHeight() - dp(56)) / 2;
+                    modSearchButton.layout(searchX, searchY, searchX + dp(56), searchY + dp(56));
+                }
+            }
+
+            @Override
+            protected void dispatchDraw(@NonNull Canvas canvas) {
+                if (modGlassActive && modTabsGlass != null) {
+                    modPanelBounds.set(tabsView.getLeft() + dp(DialogsActivity.MAIN_TABS_MARGIN),
+                            tabsView.getTop() + dp(DialogsActivity.MAIN_TABS_MARGIN),
+                            tabsView.getRight() - dp(DialogsActivity.MAIN_TABS_MARGIN),
+                            tabsView.getBottom() - dp(DialogsActivity.MAIN_TABS_MARGIN));
+                    modTabsGlass.draw(canvas, modPanelBounds, dp(28), dp(28), tabsView.getAlpha(), contentView);
+                    modPanelBounds.set(modSearchButton.getLeft(), modSearchButton.getTop(),
+                            modSearchButton.getRight(), modSearchButton.getBottom());
+                    modTabsGlass.draw(canvas, modPanelBounds, dp(28), dp(28), modSearchButton.getAlpha(), contentView);
+                }
+                super.dispatchDraw(canvas);
+            }
+        };
         tabsViewWrapper.addView(tabsView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
+        modSearchButton = new ImageView(context);
+        modSearchButton.setImageResource(R.drawable.outline_header_search);
+        modSearchButton.setScaleType(ImageView.ScaleType.CENTER);
+        modSearchButton.setContentDescription(getString(R.string.Search));
+        modSearchButton.setBackground(Theme.createSelectorDrawable(0x22FFFFFF, Theme.RIPPLE_MASK_CIRCLE_AUTO));
+        modSearchButton.setOnClickListener(v -> {
+            if (viewPager.isManualScrolling() || viewPager.isTouch()) return;
+            if (viewPager.getCurrentPosition() == POSITION_CHATS) {
+                openModSearch();
+            } else {
+                pendingModSearch = true;
+                selectTab(POSITION_CHATS, true);
+                viewPager.scrollToPosition(POSITION_CHATS);
+            }
+        });
+        tabsViewWrapper.addView(modSearchButton, LayoutHelper.createFrame(56, 56, Gravity.BOTTOM | Gravity.RIGHT));
         tabsViewWrapper.setClipToPadding(false);
         contentView.addView(tabsViewWrapper, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
+        modTabsGlass = new ModGlassBackground(tabsViewWrapper);
 
         updateLayoutWrapper = new UpdateLayoutWrapper(context);
         contentView.addView(updateLayoutWrapper, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
@@ -411,8 +468,44 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         }
 
         updateLayout();
+        applyModTabs();
         checkUnreadCount(false);
         return contentView;
+    }
+
+    private void openModSearch() {
+        pendingModSearch = false;
+        if (dialogsActivity != null && dialogsActivity.getFragmentView() != null && dialogsActivity.searchItem != null) {
+            dialogsActivity.searchItem.performClick();
+        }
+    }
+
+    private void applyModTabs() {
+        if (tabsView == null || modSearchButton == null) return;
+        boolean active = ModConfig.isGlassActive();
+        modGlassActive = active;
+        // Настройки всегда третьи в режиме мода; сохранённый выбор вкладки звонков не меняем.
+        FragmentState state = fragmentsArr.get(POSITION_CALLS_OR_SETTINGS);
+        boolean calls = !active && getUserConfig().showCallsTab;
+        if (state != null && (state.fragment instanceof CallLogActivity) != calls) {
+            dropFragmentAtPosition(POSITION_CALLS_OR_SETTINGS);
+            dropCallsFragmentAfterPageScroll = false;
+            viewPager.rebuild(false);
+        }
+        checkUi_callTabVisible(getUserConfig().showCallsTab, false);
+        tabsView.setBackground(active ? null : tabsViewBackground);
+        tabsView.setModGlass(active);
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) tabsView.getLayoutParams();
+        lp.leftMargin = active ? dp(12) : 0;
+        lp.rightMargin = active ? dp(76) : 0;
+        tabsView.setLayoutParams(lp);
+        modSearchButton.setVisibility(active ? View.VISIBLE : View.GONE);
+        boolean light = active && ModConfig.wallpaperMode != ModConfig.WP_NONE;
+        modSearchButton.setColorFilter(light ? 0xFFFFFFFF : getThemedColor(Theme.key_glass_tabSelected));
+        for (GlassTabView tab : tabs) tab.setModGlass(active, light);
+        tabsViewWrapper.invalidate();
+        checkUi_tabsPosition();
+        checkUi_fadeView();
     }
 
     private void checkUnreadCount(boolean animated) {
@@ -762,6 +855,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
                 dialogsActivity.scrollToFolder(pendingFolderId);
                 pendingFolderId = null;
             }
+            if (pendingModSearch && currentPosition == POSITION_CHATS) {
+                openModSearch();
+            }
         }
 
     }
@@ -832,7 +928,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             args.putBoolean("hasMainTabs", true);
             return new ContactsActivity(args);
         } else if (position == POSITION_CALLS_OR_SETTINGS) {
-            if (getUserConfig().showCallsTab) {
+            if (!modGlassActive && getUserConfig().showCallsTab) {
                 Bundle args = new Bundle();
                 args.putBoolean("needFinishFragment", false);
                 args.putBoolean("hasMainTabs", true);
@@ -1014,6 +1110,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         } else if (id == NotificationCenter.needSetDayNightTheme) {
             clearAllHiddenFragments();
         } else if (id == NotificationCenter.callTabsVisibleToggled) {
+            if (modGlassActive) return;
             final boolean callTabsVisible = getUserConfig().showCallsTab;
             checkUi_callTabVisible(callTabsVisible, true);
             if (viewPager != null && viewPager.getCurrentPosition() == POSITION_CALLS_OR_SETTINGS) {
@@ -1055,6 +1152,10 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
     @Override
     public void onFragmentDestroy() {
+        if (modTabsGlass != null) {
+            modTabsGlass.release();
+            modTabsGlass = null;
+        }
         Bulletin.removeDelegate(this);
         Bulletin.removeDelegate(contentView);
 
@@ -1086,6 +1187,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         if (tabletLayout) {
             alpha = 0.0f;
         }
+        if (modGlassActive) alpha = 0.0f;
 
         fadeView.setAlpha(alpha);
         fadeView.setTranslationY(isProfile * dp(48));
@@ -1102,13 +1204,20 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         final float scale = lerp(0.85f, 1f, factor);
 
         tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor));
-        tabsView.setClickable(factor > 1);
-        tabsView.setEnabled(factor > 1);
+        tabsView.setClickable(factor > 0);
+        tabsView.setEnabled(factor > 0);
         tabsView.setAlpha(factor);
         tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);
+        if (modSearchButton != null) {
+            modSearchButton.setAlpha(factor);
+            modSearchButton.setEnabled(factor > 0);
+            modSearchButton.setVisibility(modGlassActive && factor > 0 ? View.VISIBLE : View.GONE);
+            tabsViewWrapper.invalidate();
+        }
     }
 
     private void checkUi_callTabVisible(boolean callTabsVisible, boolean animated) {
+        callTabsVisible = callTabsVisible && !modGlassActive;
         if (tabsView != null) {
             tabsView.setViewVisible(tabs[INDEX_SETTINGS], !callTabsVisible, animated);
             tabsView.setViewVisible(tabs[INDEX_CALLS], callTabsVisible, animated);
@@ -1299,6 +1408,10 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             for (GlassTabView tabView : tabs) {
                 tabView.updateColorsLottie();
             }
+        }
+        if (modSearchButton != null) {
+            modSearchButton.setColorFilter(modGlassActive && ModConfig.wallpaperMode != ModConfig.WP_NONE
+                    ? 0xFFFFFFFF : getThemedColor(Theme.key_glass_tabSelected));
         }
     }
 

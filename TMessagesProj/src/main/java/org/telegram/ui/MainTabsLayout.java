@@ -37,6 +37,12 @@ import me.vkryl.android.util.ClickHelper;
 public class MainTabsLayout extends AnimatedLinearLayout {
 
     private final Theme.ResourcesProvider resourcesProvider;
+    private boolean modGlass;
+
+    public void setModGlass(boolean enabled) {
+        modGlass = enabled;
+        invalidate();
+    }
 
     public MainTabsLayout(Context context, Theme.ResourcesProvider resourcesProvider) {
         super(context);
@@ -310,6 +316,7 @@ public class MainTabsLayout extends AnimatedLinearLayout {
     @Override
     protected void dispatchDraw(@NonNull Canvas canvas) {
         if (drawCustomSelector) {
+            if (modGlass) selectorPaint.setColor(0x2EFFFFFF);
             final float x = animatedLongSelectedViewCenterX + animatedLongSelectedViewOffsetX;
             final float sWidth = getInterpolatedWidthByX(x, this);
             final float sHeight = getHeight() - getPaddingTop() - getPaddingBottom();

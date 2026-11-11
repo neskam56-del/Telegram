@@ -197,6 +197,9 @@ public class WebRtcAudioRecord {
           // failed to join this thread. To be a bit safer, try to avoid calling any native methods
           // in case they've been unregistered after stopRecording() returned.
           if (keepAlive) {
+            if (org.telegram.ghostgram.voice.VoiceChangerDSP.isEnabled()) {
+              org.telegram.ghostgram.voice.VoiceChangerDSP.processByteBuffer(byteBuffer, bytesRead, audioRecord.getSampleRate(), audioRecord.getChannelCount());
+            }
             try {
               nativeDataIsRecorded(bytesRead, nativeAudioRecord);
             } catch (UnsatisfiedLinkError unsatisfiedLinkError) {

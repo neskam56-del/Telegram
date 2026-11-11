@@ -509,6 +509,49 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
                 parentAlert.updateLayout(ChatAttachAlertLocationLayout.this, true, dy);
             }
         });
+        listView.setOnItemLongClickListener((view, position) -> {
+            if (position == 1 && getParentActivity() != null) {
+                org.telegram.ui.ActionBar.AlertDialog.Builder builder = new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity());
+                builder.setTitle("Ввод координат вручную");
+                android.widget.LinearLayout linearLayout = new android.widget.LinearLayout(getParentActivity());
+                linearLayout.setOrientation(android.widget.LinearLayout.VERTICAL);
+                linearLayout.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(10), AndroidUtilities.dp(20), AndroidUtilities.dp(10));
+
+                android.widget.EditText latInput = new android.widget.EditText(getParentActivity());
+                latInput.setHint("Широта (например, 55.7558)");
+                latInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+                linearLayout.addView(latInput);
+
+                android.widget.EditText lonInput = new android.widget.EditText(getParentActivity());
+                lonInput.setHint("Долгота (например, 37.6173)");
+                lonInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+                linearLayout.addView(lonInput);
+
+                builder.setView(linearLayout);
+                builder.setPositiveButton("Применить", (dialog, which) -> {
+                    try {
+                        double lat = Double.parseDouble(latInput.getText().toString().trim());
+                        double lon = Double.parseDouble(lonInput.getText().toString().trim());
+                        userLocation = new Location("custom");
+                        userLocation.setLatitude(lat);
+                        userLocation.setLongitude(lon);
+                        userLocationMoved = true;
+                        if (map != null) {
+                            map.animateCamera(ApplicationLoader.getMapsProvider().newCameraUpdateLatLngZoom(new IMapsProvider.LatLng(lat, lon), 15));
+                        }
+                        if (adapter != null) {
+                            adapter.setCustomLocation(userLocation);
+                        }
+                    } catch (Exception e) {
+                        BulletinFactory.of(parentAlert.getContainer(), resourcesProvider).createErrorBulletin("Неверные координаты").show();
+                    }
+                });
+                builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
+                builder.show();
+                return true;
+            }
+            return false;
+        });
         listView.setOnItemClickListener((view, position) -> {
             if (locationType == LOCATION_TYPE_STORY) {
                 if (position == 1 && adapter.city != null) {
@@ -521,11 +564,16 @@ public class ChatAttachAlertLocationLayout extends ChatAttachAlert.AttachAlertLa
                     return;
                 }
             } else if (position == 1) {
-                if (delegate != null && userLocation != null) {
+                if (delegate != null && (userLocation != null || org.telegram.ghostgram.GhostConfig.fakeLocationEnabled)) {
                     TLRPC.TL_messageMediaGeo location = new TLRPC.TL_messageMediaGeo();
                     location.geo = new TLRPC.TL_geoPoint();
-                    location.geo.lat = AndroidUtilities.fixLocationCoord(userLocation.getLatitude());
-                    location.geo._long = AndroidUtilities.fixLocationCoord(userLocation.getLongitude());
+                    if (org.telegram.ghostgram.GhostConfig.fakeLocationEnabled && !userLocationMoved) {
+                        location.geo.lat = AndroidUtilities.fixLocationCoord(org.telegram.ghostgram.GhostConfig.fakeLatitude);
+                        location.geo._long = AndroidUtilities.fixLocationCoord(org.telegram.ghostgram.GhostConfig.fakeLongitude);
+                    } else if (userLocation != null) {
+                        location.geo.lat = AndroidUtilities.fixLocationCoord(userLocation.getLatitude());
+                        location.geo._long = AndroidUtilities.fixLocationCoord(userLocation.getLongitude());
+                    }
                     AlertsCreator.ensurePaidMessageConfirmation(parentAlert.currentAccount, parentAlert.getDialogId(), 1 + parentAlert.getAdditionalMessagesCount(), payStars -> {
                         if (chatActivity != null && chatActivity.isInScheduleMode()) {
                             AlertsCreator.createScheduleDatePickerDialog(getParentActivity(), chatActivity.getDialogId(), (notify, scheduleDate, scheduleRepeatPeriod) -> {

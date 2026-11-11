@@ -71,6 +71,15 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
     private int colorSelectedText;
     private int colorDefault;
     private boolean usePremiumCounter;
+    private boolean modGlass;
+    private boolean modLightContent;
+    private final Paint modSelectorBorder = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    public void setModGlass(boolean enabled, boolean lightContent) {
+        modGlass = enabled;
+        modLightContent = lightContent;
+        updateColorsLottie();
+    }
 
     private TabAnimation tabAnimation;
     private TLRPC.TL_attachMenuBot tabAnimationBot;
@@ -125,6 +134,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
             final float offset = (visualWidth - getMeasuredWidth()) / 2f;
             imageView.setTranslationX(offset);
             textView.setTranslationX(offset);
+            if (backupImageView != null) backupImageView.setTranslationX(offset);
         }
     }
 
@@ -154,13 +164,21 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         if (selectedFactor > 0 && !skipDrawSelector) {
             final float alpha = AnimatorUtils.DECELERATE_INTERPOLATOR.getInterpolation(selectedFactor);
 
-            paintCounterBackground.setColor(Theme.multAlpha(colorSelected, 0.09f * alpha));
+            paintCounterBackground.setColor(Theme.multAlpha(modGlass ? Color.WHITE : colorSelected,
+                    (modGlass ? 0.18f : 0.09f) * alpha));
             tmpRectF.set(0, 0, viewWidth, getHeight());
             final float r = Math.min(tmpRectF.width(), tmpRectF.height()) / 2f;
             final float s = lerp(0.6f, 1, selectedFactor) * MathUtils.clamp(attachScale, 0, 1);
             canvas.save();
             canvas.scale(s, s, tmpRectF.centerX(), tmpRectF.centerY());
             canvas.drawRoundRect(tmpRectF, r, r, paintCounterBackground);
+            if (modGlass) {
+                modSelectorBorder.setStyle(Paint.Style.STROKE);
+                modSelectorBorder.setStrokeWidth(dpf2(0.5f));
+                modSelectorBorder.setColor(Theme.multAlpha(0x66FFFFFF, alpha));
+                tmpRectF.inset(dpf2(0.5f), dpf2(0.5f));
+                canvas.drawRoundRect(tmpRectF, r, r, modSelectorBorder);
+            }
             canvas.restore();
         }
 
@@ -231,6 +249,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
     }
 
     public void setSelected(boolean selected, boolean animated) {
+        super.setSelected(selected);
         isSelectedAnimator.setValue(selected, animated);
         checkPlayAnimation(animated);
 
@@ -266,6 +285,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
 
     @Override
     public void updateColors() {
+        if (modGlass && modLightContent) return;
         // every theme frame: applyColors allocates a color filter, so only when a color changed
         if (colorDefault != Theme.getColor(Theme.key_glass_tabUnselected, resourcesProvider) ||
             colorSelected != Theme.getColor(Theme.key_glass_tabSelected, resourcesProvider) ||
@@ -285,6 +305,10 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         colorDefault = Theme.getColor(Theme.key_glass_tabUnselected, resourcesProvider);
         colorSelected = Theme.getColor(Theme.key_glass_tabSelected, resourcesProvider);
         colorSelectedText = Theme.getColor(Theme.key_glass_tabSelectedText, resourcesProvider);
+        if (modGlass && modLightContent) {
+            colorDefault = 0xCCFFFFFF;
+            colorSelected = colorSelectedText = Color.WHITE;
+        }
         applyColors();
         invalidate();
     }

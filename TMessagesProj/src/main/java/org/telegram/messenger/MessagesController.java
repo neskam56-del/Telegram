@@ -19521,6 +19521,17 @@ public class MessagesController extends BaseController implements NotificationCe
                         message.out = true;
                     }
                 }
+                if (org.telegram.ghostgram.GhostConfig.antiEditEnabled && message != null) {
+                    try {
+                        long did = MessageObject.getDialogId(message);
+                        TLRPC.Message oldMsg = getMessagesStorage().getMessage(did, message.id);
+                        if (oldMsg != null && oldMsg.message != null && !oldMsg.message.equals(message.message)) {
+                            org.telegram.ghostgram.antidelete.AntiDeleteManager.getInstance().saveEditHistory(message.id, did, oldMsg.message, currentAccount);
+                        }
+                    } catch (Throwable e) {
+                        FileLog.e(e);
+                    }
+                }
                 if (!message.out) {
                     long from_id = DialogObject.getPeerDialogId(message.from_id);
                     if (from_id == clientUserId) {
@@ -21732,6 +21743,9 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public SponsoredMessagesInfo getSponsoredMessages(long dialogId) {
+        if (org.telegram.ghostgram.GhostConfig.localPremiumEnabled) {
+            return null;
+        }
         SponsoredMessagesInfo info = sponsoredMessages.get(dialogId);
         if (info != null && (info.loading || Math.abs(SystemClock.elapsedRealtime() - info.loadTime) <= 5 * 60 * 1000)) {
             return info;
@@ -23888,6 +23902,9 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public ChannelRecommendations getChannelRecommendations(long dialogId) {
+        if (org.telegram.ghostgram.GhostConfig.hideChannelRecommendations) {
+            return null;
+        }
         if (cachedChannelRecommendations == null) {
             cachedChannelRecommendations = new HashMap<>();
         }

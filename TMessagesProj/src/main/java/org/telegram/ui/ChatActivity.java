@@ -1248,6 +1248,8 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_APPLY_LOCALIZATION_OR_THEME = 5;
     public final static int OPTION_SHARE = 6;
     public final static int OPTION_SAVE_TO_GALLERY2 = 7;
+    public final static int OPTION_GHOST_EDIT_HISTORY = 998;
+    public final static int OPTION_GHOST_FORWARD_NO_NAME = 997;
     public final static int OPTION_REPLY = 8;
     public final static int OPTION_ADD_TO_STICKERS_OR_MASKS = 9;
     public final static int OPTION_SAVE_TO_DOWNLOADS_OR_MUSIC = 10;
@@ -1706,6 +1708,7 @@ public class ChatActivity extends BaseFragment implements
     private final static int search = 40;
 
     private final static int topic_close = 60;
+    private final static int ghost_to_first_message = 995;
     private final static int open_forum = 61;
 
     private final static int translate = 62;
@@ -3910,6 +3913,8 @@ public class ChatActivity extends BaseFragment implements
                     }
                 } else if (id == mute) {
                     toggleMute(false);
+                } else if (id == ghost_to_first_message) {
+                    scrollToFirstMessage();
                 } else if (id == add_shortcut) {
                     try {
                         getMediaDataController().installShortcut(currentUser.id, MediaDataController.SHORTCUT_TYPE_USER_OR_CHAT);
@@ -4415,6 +4420,7 @@ public class ChatActivity extends BaseFragment implements
             if (currentUser != null && currentUser.self && getDialogId() != UserObject.VERIFY) {
                 headerItem.lazilyAddSubItem(add_shortcut, R.drawable.msg_home, LocaleController.getString(R.string.AddShortcut));
             }
+            headerItem.lazilyAddSubItem(ghost_to_first_message, R.drawable.msg_go_up, "К первому сообщению");
             if (!isTopic && !ChatObject.isMonoForum(currentChat)) {
                 clearHistoryItem = headerItem.lazilyAddSubItem(clear_history, R.drawable.msg_clear,
                     LocaleController.getString(UserObject.isBotForum(currentUser) ? R.string.ClearAllHistory : R.string.ClearHistory));
@@ -30742,6 +30748,10 @@ public class ChatActivity extends BaseFragment implements
         paused = false;
         pausedOnLastMessage = false;
         checkScrollForLoad(false);
+        if (arguments != null && arguments.getBoolean("ghostScrollToFirst", false)) {
+            arguments.remove("ghostScrollToFirst");
+            AndroidUtilities.runOnUIThread(this::scrollToFirstMessage, 200);
+        }
         if (wasPaused) {
             wasPaused = false;
             if (chatAdapter != null) {
@@ -34101,6 +34111,81 @@ public class ChatActivity extends BaseFragment implements
         }
     }
 
+    private void showEditHistoryAlert(MessageObject messageObject) {
+        if (messageObject == null || getParentActivity() == null) {
+            return;
+        }
+        ArrayList<org.telegram.ghostgram.antidelete.AntiDeleteManager.EditEntry> history =
+            org.telegram.ghostgram.antidelete.AntiDeleteManager.getInstance().getEditHistory(messageObject.getId(), messageObject.getDialogId());
+        if (history == null || history.isEmpty()) {
+            BulletinFactory.of(this).createSimpleBulletin(R.drawable.msg_edit, "История правок отсутствует").show();
+            return;
+        }
+
+        BottomSheet.Builder builder = new BottomSheet.Builder(getParentActivity(), false, themeDelegate);
+        builder.setTitle("История правок");
+
+        android.widget.LinearLayout layout = new android.widget.LinearLayout(getParentActivity());
+        layout.setOrientation(android.widget.LinearLayout.VERTICAL);
+        layout.setPadding(AndroidUtilities.dp(16), AndroidUtilities.dp(8), AndroidUtilities.dp(16), AndroidUtilities.dp(16));
+
+        for (int i = 0; i < history.size(); i++) {
+            org.telegram.ghostgram.antidelete.AntiDeleteManager.EditEntry entry = history.get(i);
+
+            android.widget.TextView dateView = new android.widget.TextView(getParentActivity());
+            dateView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 12);
+            dateView.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText));
+            dateView.setText(LocaleController.formatDateTime(entry.editTime / 1000, true));
+            dateView.setPadding(0, AndroidUtilities.dp(i == 0 ? 0 : 12), 0, AndroidUtilities.dp(4));
+            layout.addView(dateView);
+
+            android.widget.TextView textView = new android.widget.TextView(getParentActivity());
+            textView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 15);
+            textView.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteBlackText));
+            textView.setText(entry.originalText != null ? entry.originalText : "");
+            textView.setBackground(Theme.createRadSelectorDrawable(getThemedColor(Theme.key_listSelector), AndroidUtilities.dp(8), AndroidUtilities.dp(8)));
+            textView.setPadding(AndroidUtilities.dp(10), AndroidUtilities.dp(8), AndroidUtilities.dp(10), AndroidUtilities.dp(8));
+            final String textToCopy = entry.originalText;
+            textView.setOnClickListener(v -> {
+                AndroidUtilities.addToClipboard(textToCopy);
+                BulletinFactory.of(ChatActivity.this).createCopyBulletin(LocaleController.getString(R.string.TextCopied)).show();
+            });
+            layout.addView(textView);
+        }
+
+        android.widget.ScrollView scrollView = new android.widget.ScrollView(getParentActivity());
+        scrollView.addView(layout);
+        builder.setCustomView(scrollView);
+        showDialog(builder.create());
+    }
+
+    public void scrollToFirstMessage() {
+        TLRPC.TL_messages_getHistory req = new TLRPC.TL_messages_getHistory();
+        req.peer = getMessagesController().getInputPeer(dialog_id);
+        if (req.peer == null) {
+            return;
+        }
+        req.offset_id = 1;
+        req.add_offset = -1;
+        req.limit = 1;
+        getConnectionsManager().sendRequest(req, (response, error) -> {
+            if (response instanceof TLRPC.messages_Messages) {
+                TLRPC.messages_Messages res = (TLRPC.messages_Messages) response;
+                if (!res.messages.isEmpty()) {
+                    final int firstMsgId = res.messages.get(0).id;
+                    AndroidUtilities.runOnUIThread(() -> {
+                        scrollToMessageId(firstMsgId, 0, true, 0, true, 0);
+                        BulletinFactory.of(ChatActivity.this).createSimpleBulletin(R.drawable.msg_go_up, "Переход к первому сообщению").show();
+                    });
+                } else {
+                    AndroidUtilities.runOnUIThread(() -> {
+                        BulletinFactory.of(ChatActivity.this).createSimpleBulletin(R.drawable.msg_go_up, "Первое сообщение не найдено").show();
+                    });
+                }
+            }
+        });
+    }
+
     public void restartSticker(ChatMessageCell cell) {
         MessageObject message = cell.getMessageObject();
         TLRPC.Document document = message.getDocument();
@@ -34302,6 +34387,36 @@ public class ChatActivity extends BaseFragment implements
                 DialogsActivity fragment = new DialogsActivity(args);
                 fragment.setDelegate(this);
                 presentFragment(fragment);
+                break;
+            }
+            case OPTION_GHOST_FORWARD_NO_NAME: {
+                if (getMessagesController().isFrozen()) {
+                    AccountFrozenAlert.show(currentAccount);
+                    selectedObject = null;
+                    selectedObjectToEditCaption = null;
+                    selectedObjectGroup = null;
+                    return;
+                }
+                forwardingMessage = selectedObject;
+                forwardingMessageGroup = selectedObjectGroup;
+                Bundle args = new Bundle();
+                args.putBoolean("onlySelect", true);
+                args.putInt("dialogsType", DialogsActivity.DIALOGS_TYPE_FORWARD);
+                args.putInt("messagesCount", 1);
+                args.putInt("hasPoll", forwardingMessage.isTodo() ? 3 : forwardingMessage.isPoll() ? (forwardingMessage.isPublicPoll() ? 2 : 1) : 0);
+                if (ChatObject.isMonoForum(currentChat) && ChatObject.canManageMonoForum(currentAccount, currentChat) && currentChat.linked_monoforum_id != 0) {
+                    args.putLong("forward_into_channel", -currentChat.linked_monoforum_id);
+                }
+                args.putBoolean("hasInvoice", forwardingMessage.isInvoice());
+                args.putBoolean("canSelectTopics", true);
+                args.putBoolean("ghostForwardNoName", true);
+                DialogsActivity fragment = new DialogsActivity(args);
+                fragment.setDelegate(this);
+                presentFragment(fragment);
+                break;
+            }
+            case OPTION_GHOST_EDIT_HISTORY: {
+                showEditHistoryAlert(selectedObject);
                 break;
             }
             case OPTION_COPY: {
@@ -35390,7 +35505,8 @@ public class ChatActivity extends BaseFragment implements
                         params.suggestionParams = messageSuggestionParams;
                         getSendMessagesHelper().sendMessage(params);
                     }
-                    getSendMessagesHelper().sendMessage(fmessages, did, false, false, notify, scheduleDate, scheduleRepeatPeriod, null, -1, price == null ? 0 : price, getSendMonoForumPeerId(), getSendMessageSuggestionParams());
+                    boolean forwardNoName = fragment != null && fragment.getArguments() != null && fragment.getArguments().getBoolean("ghostForwardNoName", false);
+                    getSendMessagesHelper().sendMessage(fmessages, did, forwardNoName, false, notify, scheduleDate, scheduleRepeatPeriod, null, -1, price == null ? 0 : price, getSendMonoForumPeerId(), getSendMessageSuggestionParams());
                 }
                 fragment.finishFragment();
                 createUndoView();
@@ -35478,6 +35594,10 @@ public class ChatActivity extends BaseFragment implements
                         chatActivity.showFieldPanelForReplyQuote(replyingMessageObject, replyingQuote);
                     } else {
                         chatActivity.showFieldPanelForForward(true, fmessages);
+                        boolean forwardNoName = fragment != null && fragment.getArguments() != null && fragment.getArguments().getBoolean("ghostForwardNoName", false);
+                        if (forwardNoName && chatActivity.messagePreviewParams != null) {
+                            chatActivity.messagePreviewParams.hideForwardSendersName = true;
+                        }
                     }
                     if (chatActivity.getDialogId() == getDialogId() && !AndroidUtilities.isTablet()) {
                         removeSelfFromStack();
@@ -35506,6 +35626,10 @@ public class ChatActivity extends BaseFragment implements
                     showFieldPanelForReplyQuote(replyingMessageObject, replyingQuote);
                 } else {
                     showFieldPanelForForward(true, fmessages);
+                    boolean forwardNoName = fragment != null && fragment.getArguments() != null && fragment.getArguments().getBoolean("ghostForwardNoName", false);
+                    if (forwardNoName && messagePreviewParams != null) {
+                        messagePreviewParams.hideForwardSendersName = true;
+                    }
                 }
                 if (AndroidUtilities.isTablet()) {
                     hideActionMode();
@@ -46618,6 +46742,11 @@ public class ChatActivity extends BaseFragment implements
                     options.add(OPTION_COPY);
                     icons.add(R.drawable.msg_copy);
                 }
+                if (selectedObject != null && org.telegram.ghostgram.GhostConfig.antiEditEnabled && org.telegram.ghostgram.antidelete.AntiDeleteManager.getInstance().hasEditHistory(selectedObject.getId(), selectedObject.getDialogId())) {
+                    items.add("История правок");
+                    options.add(OPTION_GHOST_EDIT_HISTORY);
+                    icons.add(R.drawable.msg_edit);
+                }
                 if (!isThreadChat() && chatMode != MODE_SCHEDULED && currentChat != null && primaryMessage != null && (currentChat.has_link || primaryMessage.hasReplies()) && currentChat.megagroup && primaryMessage.canViewThread()) {
                     if (primaryMessage.hasReplies()) {
                         items.add(LocaleController.formatPluralString("ViewReplies", primaryMessage.getRepliesCount()));
@@ -46865,6 +46994,11 @@ public class ChatActivity extends BaseFragment implements
                     items.add(LocaleController.getString(R.string.Forward));
                     options.add(OPTION_FORWARD);
                     icons.add(R.drawable.msg_forward);
+                    if (org.telegram.ghostgram.GhostConfig.forwardNoAuthorEnabled) {
+                        items.add("Без имени");
+                        options.add(OPTION_GHOST_FORWARD_NO_NAME);
+                        icons.add(R.drawable.msg_forward);
+                    }
                 }
                 if (allowUnpin) {
                     items.add(LocaleController.getString(R.string.UnpinMessage));

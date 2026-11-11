@@ -502,6 +502,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
     private ValueAnimator contactsAlphaAnimator;
     private ViewPage[] viewPages;
     private ActionBarMenuItem passcodeItem;
+    private ActionBarMenuItem ghostItem;
+    private static final int ghost_item_id = 999;
     private ActionBarMenuItem downloadsItem;
     private DownloadProgressIcon downloadProgressIcon;
     private boolean downloadsItemVisible;
@@ -2810,6 +2812,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             currentConnectionState = getConnectionsManager().getConnectionState();
 
             observersGroup.addGlobal(NotificationCenter.emojiLoaded);
+            observersGroup.addGlobal(NotificationCenter.ghostModeChanged);
             if (!onlySelect) {
                 observersGroup.addGlobal(NotificationCenter.closeSearchByActiveAction);
                 observersGroup.addGlobal(NotificationCenter.proxySettingsChanged);
@@ -3190,6 +3193,10 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
             passcodeItem = menu.addItem(1, R.drawable.outline_header_lock_24);
             passcodeItem.setContentDescription(getString(R.string.AccDescrPasscodeLock));
+
+            ghostItem = menu.addItem(ghost_item_id, org.telegram.ghostgram.GhostConfig.ghostModeEnabled ? R.drawable.ic_eye_off : R.drawable.msg_views);
+            ghostItem.setContentDescription("Ghost Mode");
+            updateGhostItem();
 
             downloadsItem = menu.addItem(3, new ColorDrawable(Color.TRANSPARENT));
             downloadsItem.addView(downloadProgressIcon = new DownloadProgressIcon(currentAccount, context));
@@ -3829,7 +3836,18 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
                     passcodeItem.getLocationInWindow(position);
                     ((LaunchActivity) getParentActivity()).showPasscodeActivity(false, true, position[0] + passcodeItem.getMeasuredWidth() / 2, position[1] + passcodeItem.getMeasuredHeight() / 2, () -> passcodeItem.setAlpha(1.0f), () -> passcodeItem.setAlpha(0.0f));
                     getNotificationsController().showNotifications();
-                    checkUi_itemPasscodeVisibility();
+                } else if (id == ghost_item_id) {
+                    if (ghostItem != null) {
+                        try {
+                            ghostItem.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_PRESS, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
+                        } catch (Exception ignore) {}
+                    }
+                    org.telegram.ghostgram.GhostConfig.toggleGhostMode();
+                    updateGhostItem();
+                    BulletinFactory.of(DialogsActivity.this).createSimpleBulletin(
+                        org.telegram.ghostgram.GhostConfig.ghostModeEnabled ? R.drawable.ic_eye_off : R.drawable.msg_views,
+                        org.telegram.ghostgram.GhostConfig.ghostModeEnabled ? "Режим призрака включён" : "Режим призрака выключен"
+                    ).show();
                 } else if (id == 3) {
                     showSearch(true, true, true);
                     fragmentSearchFieldWatcher.toggleSearch(true);
@@ -6928,6 +6946,19 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             if (searchViewPager != null) {
                 searchViewPager.setTranslationY(panTranslationY + searchViewPagerTranslationY);
             }
+        }
+    }
+
+    private void updateGhostItem() {
+        if (ghostItem == null) return;
+        ghostItem.setVisibility(org.telegram.ghostgram.GhostConfig.showGhostButton ? View.VISIBLE : View.GONE);
+        if (ghostItem.getIconView() != null) {
+            ghostItem.getIconView().setImageResource(org.telegram.ghostgram.GhostConfig.ghostModeEnabled ? R.drawable.ic_eye_off : R.drawable.msg_views);
+        }
+        if (org.telegram.ghostgram.GhostConfig.ghostModeEnabled) {
+            ghostItem.setIconColor(getThemedColor(Theme.key_featuredStickers_addButton));
+        } else {
+            ghostItem.setIconColor(getThemedColor(Theme.key_actionBarDefaultIcon));
         }
     }
 
@@ -10570,6 +10601,8 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
             if (updateVisibleRows) {
                 updateVisibleRows(0);
             }
+        } else if (id == NotificationCenter.ghostModeChanged) {
+            updateGhostItem();
         } else if (id == NotificationCenter.openedChatChanged) {
             if (viewPages == null) {
                 return;

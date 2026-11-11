@@ -1214,6 +1214,9 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
                 int len = audioRecorder.read(buffer, buffer.capacity());
                 if (len > 0) {
                     buffer.limit(len);
+                    if (org.telegram.ghostgram.voice.VoiceChangerDSP.isEnabled()) {
+                        org.telegram.ghostgram.voice.VoiceChangerDSP.processByteBuffer(buffer, len, sampleRate, 1);
+                    }
                     double sum = 0;
                     try {
                         long newSamplesCount = samplesCount + len / 2;

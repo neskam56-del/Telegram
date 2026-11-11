@@ -418,6 +418,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         instance = this;
         try {
             org.telegram.ghostgram.GhostConfig.init(this);
+            org.telegram.ghostgram.ModConfig.init(this);
             org.telegram.ghostgram.antidelete.AntiDeleteManager.getInstance().init(this);
             org.telegram.ghostgram.ui.Display120HzFix.applyHighRefreshRate(this);
         } catch (Throwable e) {

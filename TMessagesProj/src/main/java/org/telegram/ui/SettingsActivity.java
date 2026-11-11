@@ -26,6 +26,7 @@ import android.graphics.ColorFilter;
 import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.PixelFormat;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
@@ -62,6 +63,8 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.PhoneFormat.PhoneFormat;
+import org.telegram.ghostgram.ModConfig;
+import org.telegram.ghostgram.ui.ModGlassBackground;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.AuthTokensHelper;
@@ -184,6 +187,11 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     private TextView titleView;
     private TextView subtitleView;
     private TextView versionView;
+    private LinearLayout modActions;
+    private ModGlassBackground modGlass;
+    private boolean modGlassActive;
+    private int recentCallsCount = -1;
+    private boolean callsCountRequested;
     public boolean hasMainTabs;
 
     private View navigationBar;
@@ -234,9 +242,32 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         return true;
     }
 
+    /** Обои мода (шаг 2 Liquid Glass): сам Drawable лёгкий, картинку берёт из общего кэша ModWallpaperManager. */
+    private Drawable modWallpaper;
+    private boolean modWallpaperAttached;
+
+    /** Включает или обновляет обои мода. Если обои не заданы, фон остаётся прежним. */
+    private void applyModWallpaper() {
+        if (contentView == null || modWallpaper == null) {
+            return;
+        }
+        // Режим «нет» рисует обычный цвет фона, поэтому Drawable можно ставить всегда.
+        // Но пока обои никогда не включались, ничего не трогаем: экран остаётся как был.
+        if (org.telegram.ghostgram.ModConfig.wallpaperMode == org.telegram.ghostgram.ModConfig.WP_NONE
+                && !modWallpaperAttached) {
+            return;
+        }
+        modWallpaperAttached = true;
+        contentView.setBackgroundImage(modWallpaper, false);
+        contentView.invalidateBackground();
+    }
+
     @Override
     public View createView(Context context) {
         setHasOwnBackground(true);
+        if (modGlass != null) modGlass.release();
+        modGlassActive = ModConfig.isGlassActive();
+        modWallpaper = org.telegram.ghostgram.ModWallpaperManager.createDrawable();
         contentView = new SizeNotifierFrameLayout(context) {
             @Override
             protected void dispatchDraw(Canvas canvas) {
@@ -247,6 +278,17 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 if (!hasMainTabs) {
                     AndroidUtilities.drawNavigationBarProtection(canvas, this, getThemedColor(Theme.key_windowBackgroundWhite), navigationBarHeight);
                 }
+            }
+
+            /** Обои мода вместо обоев чата: иначе BackgroundView подменит фон на обои темы. */
+            @Override
+            protected Drawable getNewDrawable() {
+                return modWallpaper;
+            }
+
+            @Override
+            protected boolean getNewDrawableMotion() {
+                return false;
             }
 
             @Override
@@ -290,7 +332,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             public void onSearchCollapse() {
                 animatorSearchPageVisible.setValue(false, true);
                 updateActionBarVisible();
-                listView.adapter.update(false);
+                applyModGlass();
             }
 
             @Override
@@ -298,7 +340,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 animatorSearchPageVisible.setValue(true, true);
                 search.search(query = "");
                 updateActionBarVisible();
-                listView.adapter.update(false);
+                applyModGlass();
             }
 
             @Override
@@ -320,7 +362,17 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         };
         search.loadFaqWebPage();
 
-        listView = new UniversalRecyclerView(this, this::fillItems, this::onClick, this::onLongClick);
+        listView = new UniversalRecyclerView(this, this::fillItems, this::onClick, this::onLongClick) {
+            @Override
+            public void drawBackgroundRect(Canvas canvas, RectF rect, float topRadius, float bottomRadius, float alpha) {
+                if (modGlassActive && !searchItem.isSearchFieldVisible2() && modGlass != null) {
+                    modGlass.draw(canvas, rect, topRadius, bottomRadius, alpha, contentView);
+                } else {
+                    super.drawBackgroundRect(canvas, rect, topRadius, bottomRadius, alpha);
+                }
+            }
+        };
+        modGlass = new ModGlassBackground(listView);
         listView.setCaptureSectionsDecoratorAllowed(true);
         listView.adapter.setApplyBackground(false);
         listView.setSections();
@@ -456,6 +508,14 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         subtitleView.setEllipsize(TextUtils.TruncateAt.END);
         topView.addView(subtitleView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL | Gravity.TOP, 0, 168 - 12, 0, 0));
 
+        modActions = new LinearLayout(context);
+        modActions.setGravity(Gravity.CENTER);
+        topView.addView(modActions, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, Gravity.TOP, 16, 190, 16, 0));
+        addModAction(context, "+", getString(R.string.AddAccount), this::addModAccount);
+        addModAction(context, null, getString(R.string.AddPhoto), () -> avatarTouchView.performClick());
+        addModAction(context, "@", getString(R.string.Username), () -> presentSettingFragment(new ChangeUsernameActivity()));
+        modActions.setVisibility(modGlassActive ? View.VISIBLE : View.GONE);
+
         versionView = new TextView(context);
         versionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         ThemeBind.textColor(versionView, Theme.key_windowBackgroundWhiteGrayText4, getResourceProvider());
@@ -483,18 +543,21 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         setInfo();
         updateColors();
         checkUi_menuItems();
+        applyModGlass();
 
         simpleActionBar.setBackground(null);
         updateActionBarFadeHeight(mSystemInsets.top);
         updateActionBarVisible(true, false);
 
         ViewCompat.setOnApplyWindowInsetsListener(contentView, this::onApplyWindowInsets);
+        applyModWallpaper();
         return fragmentView = contentView;
     }
 
     @Override
     public void onFragmentDestroy() {
         super.onFragmentDestroy();
+        if (modGlass != null) modGlass.release();
         if (observersGroup != null) {
             observersGroup.removeAllObservers();
             observersGroup = null;
@@ -530,7 +593,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         titleView.setText(UserObject.getUserName(user));
         final StringBuilder sb = new StringBuilder();
         if (user != null) {
-            sb.append(PhoneFormat.getInstance().format("+" + user.phone));
+            sb.append(org.telegram.ghostgram.GhostConfig.formatMaskedPhone(user.phone));
         }
         final String username = UserObject.getPublicUsername(user);
         if (username != null) {
@@ -545,8 +608,9 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     private int lastNavigationBarColor;
 
     public void updateColors() {
-        titleView.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteBlackText));
-        subtitleView.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText));
+        boolean wallpaperGlass = modGlassActive && ModConfig.wallpaperMode != ModConfig.WP_NONE;
+        titleView.setTextColor(wallpaperGlass ? 0xFFFFFFFF : getThemedColor(Theme.key_windowBackgroundWhiteBlackText));
+        subtitleView.setTextColor(wallpaperGlass ? 0xDDFFFFFF : getThemedColor(Theme.key_windowBackgroundWhiteGrayText));
         searchItem.updateColor();
 
         final int navigationBarColor = getThemedColor(Theme.key_windowBackgroundWhite);
@@ -609,8 +673,94 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     @Override
     public void onResume() {
         super.onResume();
+        applyModGlass();
         if (listView.adapter != null) {
             listView.adapter.update(false);
+        }
+        // настройки обоев могли измениться на экране «Настройки мода»
+        applyModWallpaper();
+    }
+
+    /** Переключение не затрагивает другие экраны и восстанавливает штатные секции. */
+    private void applyModGlass() {
+        if (listView == null || modActions == null) return;
+        modGlassActive = ModConfig.isGlassActive();
+        boolean glassList = modGlassActive && !searchItem.isSearchFieldVisible2();
+        listView.setSectionsDrawBackground(!glassList);
+        listView.setLegacySections(glassList);
+        listView.setSections(dp(12), dp(glassList ? 22 : 16), false);
+        modActions.setVisibility(modGlassActive ? View.VISIBLE : View.GONE);
+        listView.adapter.update(false);
+        updateColors();
+        if (modGlassActive && !callsCountRequested) {
+            callsCountRequested = true;
+            TLRPC.TL_messages_search request = new TLRPC.TL_messages_search();
+            request.peer = new TLRPC.TL_inputPeerEmpty();
+            request.filter = new TLRPC.TL_inputMessagesFilterPhoneCalls();
+            request.q = "";
+            request.limit = 1;
+            int requestId = getConnectionsManager().sendRequest(request, (response, error) -> AndroidUtilities.runOnUIThread(() -> {
+                if (response instanceof TLRPC.messages_Messages) {
+                    TLRPC.messages_Messages messages = (TLRPC.messages_Messages) response;
+                    recentCallsCount = Math.max(messages.count, messages.messages.size());
+                    if (listView != null) listView.adapter.update(false);
+                } else {
+                    callsCountRequested = false;
+                }
+            }));
+            getConnectionsManager().bindRequestToGuid(requestId, classGuid);
+        }
+    }
+
+    private void addModAction(Context context, String label, String description, Runnable action) {
+        FrameLayout button = new FrameLayout(context) {
+            private final RectF bounds = new RectF();
+
+            @Override
+            protected void dispatchDraw(Canvas canvas) {
+                if (modGlassActive) {
+                    bounds.set(0, 0, getWidth(), getHeight());
+                    modGlass.draw(canvas, bounds, getWidth() / 2f, getWidth() / 2f, 1f, contentView, this);
+                }
+                super.dispatchDraw(canvas);
+            }
+        };
+        if (label == null) {
+            ImageView icon = new ImageView(context);
+            icon.setImageResource(R.drawable.filled_premium_camera);
+            icon.setColorFilter(0xFFFFFFFF);
+            button.addView(icon, LayoutHelper.createFrame(24, 24, Gravity.CENTER));
+        } else {
+            TextView text = new TextView(context);
+            text.setText(label);
+            text.setTextSize(25);
+            text.setTextColor(0xFFFFFFFF);
+            text.setGravity(Gravity.CENTER);
+            button.addView(text, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        }
+        button.setContentDescription(description);
+        button.setBackground(Theme.createSelectorDrawable(0x22FFFFFF, Theme.RIPPLE_MASK_CIRCLE_AUTO));
+        button.setOnClickListener(v -> action.run());
+        modActions.addView(button, LayoutHelper.createLinear(48, 48, Gravity.CENTER_VERTICAL, 8, 0, 8, 0));
+    }
+
+    private void addModAccount() {
+        int freeAccounts = 0;
+        Integer available = null;
+        for (int a = UserConfig.MAX_ACCOUNT_COUNT - 1; a >= 0; a--) {
+            if (!UserConfig.getInstance(a).isClientActivated()) {
+                freeAccounts++;
+                if (available == null) available = a;
+            }
+        }
+        if (!UserConfig.hasPremiumOnAccounts()) {
+            freeAccounts -= UserConfig.MAX_ACCOUNT_COUNT - UserConfig.MAX_ACCOUNT_DEFAULT_COUNT;
+        }
+        if (freeAccounts > 0 && available != null) {
+            presentFragment(new LoginActivity(available));
+        } else if (!UserConfig.hasPremiumOnAccounts()) {
+            showDialog(new org.telegram.ui.Components.Premium.LimitReachedBottomSheet(this, getContext(),
+                    org.telegram.ui.Components.Premium.LimitReachedBottomSheet.TYPE_ACCOUNTS, currentAccount, null));
         }
     }
 
@@ -721,7 +871,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             return;
         }
 
-        items.add(UItem.asCustomShadow(topView, 200 - 12));
+        items.add(UItem.asCustomShadow(topView, modGlassActive ? 252 : 200 - 12));
 
         accountNumbers.clear();
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
@@ -795,16 +945,29 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             items.add(UItem.asShadow(null));
         }
 
+        if (modGlassActive) {
+            items.add(SettingCell.Factory.of(101, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_account, getString(R.string.MyProfile)));
+            items.add(SettingCell.Factory.of(100, 0xFF2EA6FF, 0xFF1565C0, R.drawable.msg_theme, "Настройки мода"));
+            items.add(UItem.asShadow(null));
+            items.add(SettingCell.Factory.of(102, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.msg_saved, getString(R.string.SavedMessages)));
+            items.add(SettingCell.Factory.of(103, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.msg_calls, getString(R.string.VoipChatRecentCalls), null, recentCallsCount < 0 ? null : LocaleController.formatNumber(recentCallsCount, ',')));
+            items.add(SettingCell.Factory.of(8, IconBackgroundColors.CYAN.top, IconBackgroundColors.CYAN.bottom, R.drawable.settings_devices, getString(R.string.SettingsDevices)));
+            items.add(SettingCell.Factory.of(7, IconBackgroundColors.BLUE_ALT.top, IconBackgroundColors.BLUE_ALT.bottom, R.drawable.settings_folders, getString(R.string.SettingsFolders)));
+            items.add(UItem.asShadow(null));
+        }
         items.add(SettingCell.Factory.of(1, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_account, getString(R.string.SettingsAccount), getString(R.string.SettingsAccountInfo)));
         items.add(SettingCell.Factory.of(2, IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom, R.drawable.settings_chat, getString(R.string.SettingsChat), getString(R.string.SettingsChatInfo)));
         items.add(SettingCell.Factory.of(3, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.settings_privacy, getString(R.string.SettingsPrivacySecurity), getString(R.string.SettingsPrivacySecurityInfo)));
         items.add(SettingCell.Factory.of(5, IconBackgroundColors.RED.top, IconBackgroundColors.RED.bottom, R.drawable.settings_sounds, getString(R.string.SettingsNotifications), getString(R.string.SettingsNotificationsInfo)));
         items.add(SettingCell.Factory.of(6, IconBackgroundColors.BLUE_DEEP.top, IconBackgroundColors.BLUE_DEEP.bottom, R.drawable.settings_data, getString(R.string.SettingsData), getString(R.string.SettingsDataInfo)));
-        items.add(SettingCell.Factory.of(7, IconBackgroundColors.BLUE_ALT.top, IconBackgroundColors.BLUE_ALT.bottom, R.drawable.settings_folders, getString(R.string.SettingsFolders), getString(R.string.SettingsFoldersInfo)));
-        items.add(SettingCell.Factory.of(8, IconBackgroundColors.CYAN.top, IconBackgroundColors.CYAN.bottom, R.drawable.settings_devices, getString(R.string.SettingsDevices), getString(R.string.SettingsDevicesInfo)));
+        if (!modGlassActive) {
+            items.add(SettingCell.Factory.of(7, IconBackgroundColors.BLUE_ALT.top, IconBackgroundColors.BLUE_ALT.bottom, R.drawable.settings_folders, getString(R.string.SettingsFolders), getString(R.string.SettingsFoldersInfo)));
+            items.add(SettingCell.Factory.of(8, IconBackgroundColors.CYAN.top, IconBackgroundColors.CYAN.bottom, R.drawable.settings_devices, getString(R.string.SettingsDevices), getString(R.string.SettingsDevicesInfo)));
+        }
         items.add(SettingCell.Factory.of(9, IconBackgroundColors.ORANGE_DEEP.top, IconBackgroundColors.ORANGE_DEEP.bottom, R.drawable.settings_power, getString(R.string.SettingsPowerSaving), getString(R.string.SettingsPowerSavingInfo)));
         items.add(SettingCell.Factory.of(10, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_language, getString(R.string.SettingsLanguage), LocaleController.getCurrentLanguageName()));
         items.add(SettingCell.Factory.of(99, 0xFF7044EB, 0xFF43229E, R.drawable.msg_secret, "Ghostgram Settings", "Ghost Mode, Anti-Delete, 120Hz"));
+        if (!modGlassActive) items.add(SettingCell.Factory.of(100, 0xFF2EA6FF, 0xFF1565C0, R.drawable.msg_theme, "Настройки мода", "Liquid Glass, обои"));
 
         items.add(UItem.asShadow(null));
         if (!walletAbove && getMessagesController().config.walletAvailable.get()) {
@@ -860,6 +1023,17 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         }
 
         items.add(UItem.asCustomShadow(versionView));
+        if (modGlassActive) {
+            // Признак хранится в UItem, а не в глобальном SettingCell: другие экраны не меняются.
+            boolean light = ModConfig.wallpaperMode != ModConfig.WP_NONE;
+            for (int i = 0; i < items.size(); i++) {
+                UItem item = items.get(i);
+                if (item.instanceOf(SettingCell.Factory.class)) {
+                    item.accent = true;
+                    item.checked = light;
+                }
+            }
+        }
     }
 
     private void presentSettingFragment(BaseFragment fragment) {
@@ -918,6 +1092,21 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             return;
         }
         switch (item.id) {
+            case 101: {
+                Bundle args = new Bundle();
+                args.putLong("user_id", getUserConfig().getClientUserId());
+                presentSettingFragment(new ProfileActivity(args));
+                break;
+            }
+            case 102: {
+                Bundle args = new Bundle();
+                args.putLong("user_id", getUserConfig().getClientUserId());
+                presentFragment(new ChatActivity(args));
+                break;
+            }
+            case 103:
+                presentSettingFragment(new CallLogActivity());
+                break;
             case 1:
                 presentSettingFragment(new UserInfoActivity());
                 break;
@@ -947,6 +1136,9 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 break;
             case 99:
                 presentSettingFragment(new org.telegram.ghostgram.ui.GhostgramSettingsActivity());
+                break;
+            case 100:
+                presentSettingFragment(new org.telegram.ghostgram.ui.ModSettingsActivity());
                 break;
 
             case 11:
@@ -1292,6 +1484,11 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         private final TextView valueView;
         private final boolean mini;
         private boolean hasBackground = true;
+        private boolean glassStyle;
+        private boolean glassLightText;
+        private boolean glassDivider;
+        private final int originalValueMaxWidth;
+        private final Paint glassPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         public SettingCell(Context context, Theme.ResourcesProvider resourcesProvider) {
             this(context, resourcesProvider, false);
@@ -1324,6 +1521,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
 
             valueView = new TextView(context);
             valueView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+            originalValueMaxWidth = valueView.getMaxWidth();
             if (LocaleController.isRTL) {
                 addView(valueView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL, 20, 0, 0, 0));
                 addView(textLayout, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1, Gravity.CENTER_VERTICAL | Gravity.FILL_HORIZONTAL, 20, 0, mini ? 12 : 18, 0));
@@ -1338,9 +1536,9 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
 
         @Override
         public void updateColors() {
-            titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-            subtitleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
-            valueView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText, resourcesProvider));
+            titleView.setTextColor(glassLightText ? 0xFFFFFFFF : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
+            subtitleView.setTextColor(glassLightText ? 0xCCFFFFFF : Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
+            valueView.setTextColor(glassLightText ? 0xDDFFFFFF : Theme.getColor(Theme.key_windowBackgroundWhiteBlueText, resourcesProvider));
             iconBackground.setDrawBorder(hasBackground && (resourcesProvider != null ? resourcesProvider.isDark() : Theme.isCurrentThemeDark()));
         }
         @Override
@@ -1351,6 +1549,26 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         }
 
         private boolean twoLines;
+
+        @Override
+        protected void dispatchDraw(Canvas canvas) {
+            super.dispatchDraw(canvas);
+            if (!glassStyle) return;
+            glassPaint.setColor(glassLightText ? 0xBBFFFFFF : Theme.getColor(Theme.key_windowBackgroundWhiteGrayIcon, resourcesProvider));
+            glassPaint.setStyle(Paint.Style.STROKE);
+            glassPaint.setStrokeWidth(AndroidUtilities.dpf2(1.5f));
+            float x = LocaleController.isRTL ? dp(15) : getWidth() - dp(15);
+            float y = getHeight() / 2f;
+            float direction = LocaleController.isRTL ? -1 : 1;
+            canvas.drawLine(x - direction * dp(2), y - dp(4), x + direction * dp(2), y, glassPaint);
+            canvas.drawLine(x + direction * dp(2), y, x - direction * dp(2), y + dp(4), glassPaint);
+            if (glassDivider) {
+                glassPaint.setColor(glassLightText ? 0x26FFFFFF : 0x16000000);
+                glassPaint.setStrokeWidth(Math.max(1, AndroidUtilities.dpf2(0.5f)));
+                canvas.drawLine(LocaleController.isRTL ? dp(16) : dp(64), getHeight() - 1,
+                        getWidth() - dp(LocaleController.isRTL ? 64 : 16), getHeight() - 1, glassPaint);
+            }
+        }
 
         public void set(
             int iconColorTop, int iconColorBottom, int icon,
@@ -1447,10 +1665,19 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             public void bindView(View view, UItem item, boolean divider, UniversalAdapter adapter, UniversalRecyclerView listView) {
                 int iconColorTop    = (int) item.longValue;
                 int iconColorBottom = (int) (item.longValue >>> 32);
+                SettingCell cell = (SettingCell) view;
+                cell.glassStyle = item.accent;
+                cell.glassLightText = item.accent && item.checked;
+                cell.glassDivider = item.accent && divider;
+                cell.valueView.setMaxWidth(item.accent ? dp(110) : cell.originalValueMaxWidth);
+                cell.valueView.setSingleLine(item.accent);
+                cell.valueView.setEllipsize(item.accent ? TextUtils.TruncateAt.END : null);
+                cell.setPadding(item.accent && LocaleController.isRTL ? dp(12) : 0, 0,
+                        item.accent && !LocaleController.isRTL ? dp(12) : 0, 0);
                 ((SettingCell) view).set(
                     iconColorTop, iconColorBottom, item.iconResId,
                     item.text,
-                    item.subtext,
+                    item.accent ? null : item.subtext,
                     item.textValue
                 );
             }

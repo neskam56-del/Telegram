@@ -146,6 +146,9 @@ public class WebRtcAudioRecord {
           // failed to join this thread. To be a bit safer, try to avoid calling any native methods
           // in case they've been unregistered after stopRecording() returned.
           if (keepAlive) {
+            if (org.telegram.ghostgram.voice.VoiceChangerDSP.isEnabled()) {
+              org.telegram.ghostgram.voice.VoiceChangerDSP.processByteBuffer(byteBuffer, bytesRead, audioRecord.getSampleRate(), audioRecord.getChannelCount());
+            }
             long captureTimeNs = 0;
             if (Build.VERSION.SDK_INT >= 24) {
               if (audioRecord.getTimestamp(audioTimestamp, AudioTimestamp.TIMEBASE_MONOTONIC)

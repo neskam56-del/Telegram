@@ -256,6 +256,9 @@ public class ConnectionsManager extends BaseController {
         if (systemVersion.trim().length() == 0) {
             systemVersion = "SDK Unknown";
         }
+        deviceModel = org.telegram.ghostgram.GhostConfig.getSpoofedModel(deviceModel);
+        systemVersion = org.telegram.ghostgram.GhostConfig.getSpoofedSystemVersion(systemVersion);
+        appVersion = org.telegram.ghostgram.GhostConfig.getSpoofedAppVersion(appVersion);
         getUserConfig().loadConfig();
         String pushString = getRegId();
         String fingerprint = AndroidUtilities.getCertificateSHA256Fingerprint();

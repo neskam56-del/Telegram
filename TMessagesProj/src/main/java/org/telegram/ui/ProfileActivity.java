@@ -585,6 +585,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private final static int share = 10;
     private final static int edit_channel = 12;
     private final static int add_shortcut = 14;
+    private final static int ghost_to_first_message = 995;
     private final static int call_item = 15;
     private final static int video_call_item = 16;
     private final static int search_members = 17;
@@ -2740,6 +2741,15 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     presentFragment(fragment);
                 } else if (id == share) {
                     onShareClicked();
+                } else if (id == ghost_to_first_message) {
+                    Bundle args = new Bundle();
+                    if (userId != 0) {
+                        args.putLong("user_id", userId);
+                    } else if (chatId != 0) {
+                        args.putLong("chat_id", chatId);
+                    }
+                    args.putBoolean("ghostScrollToFirst", true);
+                    presentFragment(new ChatActivity(args));
                 } else if (id == add_shortcut) {
                     try {
                         long did;
@@ -12458,6 +12468,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
         if (selfUser && !myProfile) {
             otherItem.addSubItem(logout, R.drawable.msg_leave, LocaleController.getString(R.string.LogOut));
+        }
+        if (!myProfile && (userId != 0 || chatId != 0)) {
+            otherItem.addSubItem(ghost_to_first_message, R.drawable.msg_go_up, "К первому сообщению");
         }
         if (!isPulledDown) {
             otherItem.hideSubItem(gallery_menu_save);

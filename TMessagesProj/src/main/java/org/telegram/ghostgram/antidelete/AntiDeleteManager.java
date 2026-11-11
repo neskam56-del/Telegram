@@ -95,9 +95,22 @@ public class AntiDeleteManager {
      * Сохраняет текст сообщения перед редактированием (история правок).
      */
     public void saveEditHistory(int messageId, long channelId, String originalText, int currentAccount) {
-        if (!GhostConfig.antiEditEnabled || db == null) return;
+        if (!GhostConfig.antiEditEnabled || db == null || TextUtils.isEmpty(originalText)) return;
         try {
             SQLiteDatabase sqlDb = db.getWritableDatabase();
+            Cursor cursor = sqlDb.rawQuery(
+                "SELECT original_text FROM edit_history WHERE message_id = ? ORDER BY edit_time DESC LIMIT 1",
+                new String[]{String.valueOf(messageId)}
+            );
+            if (cursor.moveToFirst()) {
+                String lastText = cursor.getString(0);
+                if (TextUtils.equals(lastText, originalText)) {
+                    cursor.close();
+                    return;
+                }
+            }
+            cursor.close();
+
             ContentValues values = new ContentValues();
             values.put("message_id", messageId);
             values.put("channel_id", channelId);
@@ -108,6 +121,32 @@ public class AntiDeleteManager {
             FileLog.d(TAG + ": saved edit history for msg " + messageId);
         } catch (Exception e) {
             FileLog.e(TAG + ": error saving edit history", e);
+        }
+    }
+
+    /**
+     * Проверяет, есть ли история правок у сообщения.
+     */
+    public boolean hasEditHistory(int messageId) {
+        return hasEditHistory(messageId, 0);
+    }
+
+    public boolean hasEditHistory(int messageId, long channelId) {
+        if (db == null) return false;
+        try {
+            SQLiteDatabase sqlDb = db.getReadableDatabase();
+            String query = channelId != 0 ?
+                "SELECT 1 FROM edit_history WHERE message_id = ? AND channel_id = ? LIMIT 1" :
+                "SELECT 1 FROM edit_history WHERE message_id = ? LIMIT 1";
+            String[] args = channelId != 0 ?
+                new String[]{String.valueOf(messageId), String.valueOf(channelId)} :
+                new String[]{String.valueOf(messageId)};
+            Cursor cursor = sqlDb.rawQuery(query, args);
+            boolean exists = cursor.moveToFirst();
+            cursor.close();
+            return exists;
+        } catch (Exception e) {
+            return false;
         }
     }
 
@@ -134,14 +173,21 @@ public class AntiDeleteManager {
      * Получает историю правок сообщения.
      */
     public ArrayList<EditEntry> getEditHistory(int messageId) {
+        return getEditHistory(messageId, 0);
+    }
+
+    public ArrayList<EditEntry> getEditHistory(int messageId, long channelId) {
         ArrayList<EditEntry> history = new ArrayList<>();
         if (db == null) return history;
         try {
             SQLiteDatabase sqlDb = db.getReadableDatabase();
-            Cursor cursor = sqlDb.rawQuery(
-                "SELECT original_text, edit_time FROM edit_history WHERE message_id = ? ORDER BY edit_time DESC",
-                new String[]{String.valueOf(messageId)}
-            );
+            String query = channelId != 0 ?
+                "SELECT original_text, edit_time FROM edit_history WHERE message_id = ? AND channel_id = ? ORDER BY edit_time DESC" :
+                "SELECT original_text, edit_time FROM edit_history WHERE message_id = ? ORDER BY edit_time DESC";
+            String[] args = channelId != 0 ?
+                new String[]{String.valueOf(messageId), String.valueOf(channelId)} :
+                new String[]{String.valueOf(messageId)};
+            Cursor cursor = sqlDb.rawQuery(query, args);
             while (cursor.moveToNext()) {
                 EditEntry entry = new EditEntry();
                 entry.originalText = cursor.getString(0);

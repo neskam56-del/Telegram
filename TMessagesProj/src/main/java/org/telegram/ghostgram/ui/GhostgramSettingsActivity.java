@@ -10,6 +10,10 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.ghostgram.GhostConfig;
+import org.telegram.ghostgram.voice.VoiceChangerDSP;
+import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.Cells.TextSettingsCell;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -32,6 +36,7 @@ public class GhostgramSettingsActivity extends BaseFragment {
     // Секция: Ghost Mode
     private int ghostHeaderRow;
     private int ghostModeMasterRow;
+    private int showGhostButtonRow;
     private int hideReadRow;
     private int hideTypingRow;
     private int hideOnlineRow;
@@ -46,13 +51,40 @@ public class GhostgramSettingsActivity extends BaseFragment {
     private int extraHeaderRow;
     private int allowScreenshotsRow;
     private int force120HzRow;
+    private int forwardNoAuthorRow;
+    private int hidePhoneNumberRow;
+    private int customPhoneRow;
+    private int customPhoneValueRow;
     private int extraShadowRow;
+
+    // Секция: Изменитель голоса
+    private int voiceHeaderRow;
+    private int voicePresetRow;
+    private int voiceShadowRow;
+
+    // Секция: Подмена устройства
+    private int deviceHeaderRow;
+    private int deviceSpoofRow;
+    private int devicePresetRow;
+    private int deviceShadowRow;
+
+    // Секция: Геолокация
+    private int locationHeaderRow;
+    private int fakeLocationRow;
+    private int locationShadowRow;
+
+    // Секция: Кастомизация
+    private int customHeaderRow;
+    private int compactDialogsRow;
+    private int hideRecommendationsRow;
+    private int customShadowRow;
 
     private int rowCount;
 
     private static final int TYPE_HEADER = 0;
     private static final int TYPE_CHECK = 1;
     private static final int TYPE_SHADOW = 2;
+    private static final int TYPE_SETTINGS = 3;
 
     @Override
     public boolean onFragmentCreate() {
@@ -67,6 +99,7 @@ public class GhostgramSettingsActivity extends BaseFragment {
         // Ghost Mode
         ghostHeaderRow = rowCount++;
         ghostModeMasterRow = rowCount++;
+        showGhostButtonRow = rowCount++;
         hideReadRow = rowCount++;
         hideTypingRow = rowCount++;
         hideOnlineRow = rowCount++;
@@ -81,7 +114,33 @@ public class GhostgramSettingsActivity extends BaseFragment {
         extraHeaderRow = rowCount++;
         allowScreenshotsRow = rowCount++;
         force120HzRow = rowCount++;
+        forwardNoAuthorRow = rowCount++;
+        hidePhoneNumberRow = rowCount++;
+        customPhoneRow = rowCount++;
+        customPhoneValueRow = rowCount++;
         extraShadowRow = rowCount++;
+
+        // Voice changer
+        voiceHeaderRow = rowCount++;
+        voicePresetRow = rowCount++;
+        voiceShadowRow = rowCount++;
+
+        // Device spoofing
+        deviceHeaderRow = rowCount++;
+        deviceSpoofRow = rowCount++;
+        devicePresetRow = rowCount++;
+        deviceShadowRow = rowCount++;
+
+        // Fake location
+        locationHeaderRow = rowCount++;
+        fakeLocationRow = rowCount++;
+        locationShadowRow = rowCount++;
+
+        // Customization
+        customHeaderRow = rowCount++;
+        compactDialogsRow = rowCount++;
+        hideRecommendationsRow = rowCount++;
+        customShadowRow = rowCount++;
     }
 
     @Override
@@ -113,12 +172,27 @@ public class GhostgramSettingsActivity extends BaseFragment {
         listView.setAdapter(listAdapter = new ListAdapter(context));
 
         listView.setOnItemClickListener((view, position, x, y) -> {
+            if (position == voicePresetRow) {
+                showVoicePresetDialog();
+                return;
+            } else if (position == devicePresetRow) {
+                showDevicePresetDialog();
+                return;
+            } else if (position == customPhoneValueRow) {
+                showCustomPhoneDialog();
+                return;
+            }
             if (!(view instanceof TextCheckCell)) return;
             TextCheckCell cell = (TextCheckCell) view;
 
             if (position == ghostModeMasterRow) {
                 GhostConfig.ghostModeEnabled = !GhostConfig.ghostModeEnabled;
                 cell.setChecked(GhostConfig.ghostModeEnabled);
+                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.ghostModeChanged);
+            } else if (position == showGhostButtonRow) {
+                GhostConfig.showGhostButton = !GhostConfig.showGhostButton;
+                cell.setChecked(GhostConfig.showGhostButton);
+                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.ghostModeChanged);
             } else if (position == hideReadRow) {
                 GhostConfig.hideReadReceipts = !GhostConfig.hideReadReceipts;
                 cell.setChecked(GhostConfig.hideReadReceipts);
@@ -140,12 +214,89 @@ public class GhostgramSettingsActivity extends BaseFragment {
                 if (GhostConfig.force120Hz && getParentActivity() != null) {
                     Display120HzFix.applyHighRefreshRate(getParentActivity());
                 }
+            } else if (position == forwardNoAuthorRow) {
+                GhostConfig.forwardNoAuthorEnabled = !GhostConfig.forwardNoAuthorEnabled;
+                cell.setChecked(GhostConfig.forwardNoAuthorEnabled);
+            } else if (position == hidePhoneNumberRow) {
+                GhostConfig.hidePhoneNumber = !GhostConfig.hidePhoneNumber;
+                cell.setChecked(GhostConfig.hidePhoneNumber);
+            } else if (position == customPhoneRow) {
+                GhostConfig.customPhoneEnabled = !GhostConfig.customPhoneEnabled;
+                cell.setChecked(GhostConfig.customPhoneEnabled);
+            } else if (position == deviceSpoofRow) {
+                GhostConfig.deviceSpoofEnabled = !GhostConfig.deviceSpoofEnabled;
+                cell.setChecked(GhostConfig.deviceSpoofEnabled);
+            } else if (position == fakeLocationRow) {
+                GhostConfig.fakeLocationEnabled = !GhostConfig.fakeLocationEnabled;
+                cell.setChecked(GhostConfig.fakeLocationEnabled);
+            } else if (position == compactDialogsRow) {
+                GhostConfig.compactDialogs = !GhostConfig.compactDialogs;
+                cell.setChecked(GhostConfig.compactDialogs);
+            } else if (position == hideRecommendationsRow) {
+                GhostConfig.hideChannelRecommendations = !GhostConfig.hideChannelRecommendations;
+                cell.setChecked(GhostConfig.hideChannelRecommendations);
             }
             GhostConfig.saveConfig();
         });
 
         frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         return fragmentView;
+    }
+
+    private void showVoicePresetDialog() {
+        if (getParentActivity() == null) return;
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle("Изменитель голоса");
+        builder.setItems(VoiceChangerDSP.PRESET_NAMES, (dialog, which) -> {
+            VoiceChangerDSP.setPreset(which);
+            if (listAdapter != null) listAdapter.notifyItemChanged(voicePresetRow);
+        });
+        builder.setNegativeButton("Отмена", null);
+        showDialog(builder.create());
+    }
+
+    private void showCustomPhoneDialog() {
+        if (getParentActivity() == null) return;
+        android.widget.EditText editText = new android.widget.EditText(getParentActivity());
+        editText.setSingleLine(true);
+        editText.setInputType(android.text.InputType.TYPE_CLASS_PHONE);
+        editText.setHint("+7 999 123 45 67");
+        editText.setText(GhostConfig.customPhone);
+        editText.setSelection(editText.getText().length());
+        editText.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        editText.setHintTextColor(Theme.getColor(Theme.key_dialogTextHint));
+        FrameLayout container = new FrameLayout(getParentActivity());
+        int pad = org.telegram.messenger.AndroidUtilities.dp(24);
+        container.setPadding(pad, org.telegram.messenger.AndroidUtilities.dp(8), pad, 0);
+        container.addView(editText, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle("Свой номер телефона");
+        builder.setView(container);
+        builder.setPositiveButton("Сохранить", (dialog, which) -> {
+            GhostConfig.customPhone = editText.getText().toString().trim();
+            GhostConfig.saveConfig();
+            if (listAdapter != null) listAdapter.notifyItemChanged(customPhoneValueRow);
+        });
+        builder.setNegativeButton("Отмена", null);
+        showDialog(builder.create());
+    }
+
+    private void showDevicePresetDialog() {
+        if (getParentActivity() == null) return;
+        String[] names = new String[GhostConfig.DEVICE_PRESETS.length];
+        for (int i = 0; i < names.length; i++) {
+            names[i] = GhostConfig.DEVICE_PRESETS[i][0];
+        }
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle("Пресет устройства");
+        builder.setItems(names, (dialog, which) -> {
+            GhostConfig.deviceSpoofIndex = which;
+            GhostConfig.saveConfig();
+            if (listAdapter != null) listAdapter.notifyItemChanged(devicePresetRow);
+        });
+        builder.setNegativeButton("Отмена", null);
+        showDialog(builder.create());
     }
 
     @Override
@@ -171,18 +322,27 @@ public class GhostgramSettingsActivity extends BaseFragment {
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             int position = holder.getAdapterPosition();
-            return position == ghostModeMasterRow || position == hideReadRow ||
-                   position == hideTypingRow || position == hideOnlineRow ||
+            return position == ghostModeMasterRow || position == showGhostButtonRow ||
+                   position == hideReadRow || position == hideTypingRow || position == hideOnlineRow ||
                    position == antiDeleteRow || position == allowScreenshotsRow ||
-                   position == force120HzRow;
+                   position == force120HzRow || position == forwardNoAuthorRow || position == hidePhoneNumberRow ||
+                   position == customPhoneRow || position == customPhoneValueRow ||
+                   position == voicePresetRow || position == deviceSpoofRow || position == devicePresetRow ||
+                   position == fakeLocationRow || position == compactDialogsRow || position == hideRecommendationsRow;
         }
 
         @Override
         public int getItemViewType(int position) {
-            if (position == ghostHeaderRow || position == antiDeleteHeaderRow || position == extraHeaderRow) {
+            if (position == ghostHeaderRow || position == antiDeleteHeaderRow || position == extraHeaderRow ||
+                    position == voiceHeaderRow || position == deviceHeaderRow ||
+                    position == locationHeaderRow || position == customHeaderRow) {
                 return TYPE_HEADER;
-            } else if (position == ghostSectionShadowRow || position == antiDeleteShadowRow || position == extraShadowRow) {
+            } else if (position == ghostSectionShadowRow || position == antiDeleteShadowRow || position == extraShadowRow ||
+                    position == voiceShadowRow || position == deviceShadowRow ||
+                    position == locationShadowRow || position == customShadowRow) {
                 return TYPE_SHADOW;
+            } else if (position == voicePresetRow || position == devicePresetRow || position == customPhoneValueRow) {
+                return TYPE_SETTINGS;
             }
             return TYPE_CHECK;
         }
@@ -197,6 +357,10 @@ public class GhostgramSettingsActivity extends BaseFragment {
                     break;
                 case TYPE_SHADOW:
                     view = new ShadowSectionCell(mContext);
+                    break;
+                case TYPE_SETTINGS:
+                    view = new TextSettingsCell(mContext);
+                    view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
                     break;
                 case TYPE_CHECK:
                 default:
@@ -218,6 +382,30 @@ public class GhostgramSettingsActivity extends BaseFragment {
                         cell.setText("🗑️ Анти-Удаление");
                     } else if (position == extraHeaderRow) {
                         cell.setText("⚡ Приватность и экран");
+                    } else if (position == voiceHeaderRow) {
+                        cell.setText("🎙 Изменитель голоса");
+                    } else if (position == deviceHeaderRow) {
+                        cell.setText("📱 Подмена устройства");
+                    } else if (position == locationHeaderRow) {
+                        cell.setText("📍 Геолокация");
+                    } else if (position == customHeaderRow) {
+                        cell.setText("🎨 Кастомизация");
+                    }
+                    break;
+                }
+                case TYPE_SETTINGS: {
+                    TextSettingsCell cell = (TextSettingsCell) holder.itemView;
+                    if (position == voicePresetRow) {
+                        int p = GhostConfig.voiceChangerPreset;
+                        String name = p >= 0 && p < VoiceChangerDSP.PRESET_NAMES.length ? VoiceChangerDSP.PRESET_NAMES[p] : "";
+                        cell.setTextAndValue("Пресет голоса", name, false);
+                    } else if (position == customPhoneValueRow) {
+                        String v = GhostConfig.customPhone;
+                        cell.setTextAndValue("Свой номер", android.text.TextUtils.isEmpty(v) ? "Не задан" : v, false);
+                    } else if (position == devicePresetRow) {
+                        int i = GhostConfig.deviceSpoofIndex;
+                        String name = i >= 0 && i < GhostConfig.DEVICE_PRESETS.length ? GhostConfig.DEVICE_PRESETS[i][0] : "";
+                        cell.setTextAndValue("Пресет устройства", name, false);
                     }
                     break;
                 }
@@ -228,6 +416,14 @@ public class GhostgramSettingsActivity extends BaseFragment {
                             "Мастер Ghost Mode",
                             "Скрытный режим во всех чатах",
                             GhostConfig.ghostModeEnabled,
+                            true,
+                            true
+                        );
+                    } else if (position == showGhostButtonRow) {
+                        cell.setTextAndValueAndCheck(
+                            "Кнопка быстрого режима в чатах",
+                            "Отображать значок призрака в верхней панели",
+                            GhostConfig.showGhostButton,
                             true,
                             true
                         );
@@ -258,6 +454,62 @@ public class GhostgramSettingsActivity extends BaseFragment {
                             "Принудительно 120 Гц",
                             "Максимальная плавность на дисплее",
                             GhostConfig.force120Hz,
+                            true,
+                            true
+                        );
+                    } else if (position == forwardNoAuthorRow) {
+                        cell.setTextAndValueAndCheck(
+                            "Пересылка без имени",
+                            "Пункт 'Без имени' в меню сообщений (drop_author)",
+                            GhostConfig.forwardNoAuthorEnabled,
+                            true,
+                            true
+                        );
+                    } else if (position == hidePhoneNumberRow) {
+                        cell.setTextAndValueAndCheck(
+                            "Скрыть номер телефона",
+                            "Маскировать телефон в профиле и настройках (+* *** *** ** **)",
+                            GhostConfig.hidePhoneNumber,
+                            true,
+                            true
+                        );
+                    } else if (position == customPhoneRow) {
+                        cell.setTextAndValueAndCheck(
+                            "Показывать свой номер",
+                            "Визуально подменяет номер в профиле и настройках (на сервере не меняется)",
+                            GhostConfig.customPhoneEnabled,
+                            true,
+                            true
+                        );
+                    } else if (position == deviceSpoofRow) {
+                        cell.setTextAndValueAndCheck(
+                            "Подмена устройства",
+                            "Применяется при следующем подключении (перезапустите приложение)",
+                            GhostConfig.deviceSpoofEnabled,
+                            true,
+                            true
+                        );
+                    } else if (position == fakeLocationRow) {
+                        cell.setTextAndValueAndCheck(
+                            "Подмена геолокации",
+                            "Подставлять фейковые координаты при отправке локации",
+                            GhostConfig.fakeLocationEnabled,
+                            true,
+                            false
+                        );
+                    } else if (position == compactDialogsRow) {
+                        cell.setTextAndValueAndCheck(
+                            "Компактный список чатов",
+                            "Уменьшенные строки диалогов",
+                            GhostConfig.compactDialogs,
+                            true,
+                            true
+                        );
+                    } else if (position == hideRecommendationsRow) {
+                        cell.setTextAndValueAndCheck(
+                            "Скрыть рекомендации каналов",
+                            "Убирает блок рекомендованных каналов",
+                            GhostConfig.hideChannelRecommendations,
                             true,
                             false
                         );

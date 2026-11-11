@@ -289,6 +289,7 @@ public class NotificationCenter {
     public static final int walletTransactionsUpdate = totalEvents++;
 
     //global
+    public static final int ghostModeChanged = totalEvents++;
     public static final int activeAccountChanged = totalEvents++;
     public static final int pushMessagesUpdated = totalEvents++;
     public static final int wallpapersDidLoad = totalEvents++;

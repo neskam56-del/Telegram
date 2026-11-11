@@ -157,6 +157,7 @@ final class AudioCapture {
                     + ", bufferBytes=" + audioRecordBufferSize
                     + ", sessionId=" + audioRecord.getAudioSessionId());
             lastProgressMs = SystemClock.elapsedRealtime();
+            org.telegram.ghostgram.voice.VoiceChangerDSP.reset();
             callback.onStarted();
             captureHandler.post(this::readOnce);
         } catch (Throwable error) {
@@ -178,6 +179,9 @@ final class AudioCapture {
                 throw new IllegalStateException("AudioRecord read failed: " + bytesRead);
             }
             chunk.limit(bytesRead);
+            if (org.telegram.ghostgram.voice.VoiceChangerDSP.isEnabled()) {
+                org.telegram.ghostgram.voice.VoiceChangerDSP.processByteBuffer(chunk, bytesRead, SAMPLE_RATE, 1);
+            }
             long sum = 0L;
             int sampleCount = bytesRead / 2;
             for (int offset = 0; offset + 1 < bytesRead; offset += 2) {
