@@ -1025,11 +1025,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         items.add(SettingCell.Factory.of(10, ModGlassStyle.TILE_LANGUAGE, ModGlassStyle.TILE_LANGUAGE, R.drawable.settings_language, getString(R.string.SettingsLanguage), null, LocaleController.getCurrentLanguageName()));
         items.add(SettingCell.Factory.of(99, ModGlassStyle.TILE_MOD_SETTINGS, ModGlassStyle.TILE_MOD_SETTINGS, R.drawable.msg_secret, "Ghostgram Settings"));
         items.add(UItem.asShadow(null));
-            items.add(SettingCell.Factory.of(102, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.msg_saved, getString(R.string.SavedMessages)));
-            items.add(SettingCell.Factory.of(103, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.msg_calls, getString(R.string.VoipChatRecentCalls), null, recentCallsCount < 0 ? null : LocaleController.formatNumber(recentCallsCount, ',')));
-            items.add(SettingCell.Factory.of(8, IconBackgroundColors.CYAN.top, IconBackgroundColors.CYAN.bottom, R.drawable.settings_devices, getString(R.string.SettingsDevices)));
-            items.add(SettingCell.Factory.of(7, IconBackgroundColors.BLUE_ALT.top, IconBackgroundColors.BLUE_ALT.bottom, R.drawable.settings_folders, getString(R.string.SettingsFolders)));
-            items.add(UItem.asShadow(null));
+
         }
         items.add(SettingCell.Factory.of(1, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_account, getString(R.string.SettingsAccount), getString(R.string.SettingsAccountInfo)));
         items.add(SettingCell.Factory.of(2, IconBackgroundColors.ORANGE.top, IconBackgroundColors.ORANGE.bottom, R.drawable.settings_chat, getString(R.string.SettingsChat), getString(R.string.SettingsChatInfo)));
