@@ -1083,7 +1083,24 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             if (item.instanceOf(SettingCell.Factory.class)) {
                 item.accent = true;
                 item.checked = true;
-            }        }
+            }
+        }
+    }
+
+    private void presentSettingFragment(BaseFragment fragment) {
+        if (AndroidUtilities.isTablet() && LaunchActivity.instance != null && LaunchActivity.instance.getRightActionBarLayout() != null) {
+            final INavigationLayout layout = LaunchActivity.instance.getRightActionBarLayout();
+            if (!layout.getFragmentStack().isEmpty()) {
+                for (int a = 0; a < layout.getFragmentStack().size() - 1; a++) {
+                    layout.removeFragmentFromStack(layout.getFragmentStack().get(0));
+                    a--;
+                }
+                layout.closeLastFragment(false);
+            }
+            layout.presentFragment(new INavigationLayout.NavigationParams(fragment).setNoAnimation(true).forceRightLayout());
+        } else {
+            presentFragment(fragment);
+        }
     }
 
     private void onClick(UItem item, View view, int position, float x, float y) {

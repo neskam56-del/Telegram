@@ -53,6 +53,11 @@ public final class ModGlassBackground implements Drawable.Callback {
         border.setStrokeWidth(Math.max(1f, AndroidUtilities.dpf2(ModGlassStyle.GLASS_BORDER_WIDTH_DP)));
     }
 
+    public void invalidate() {
+        dirty = true;
+        owner.invalidate();
+    }
+
     public void draw(Canvas canvas, RectF bounds, float topRadius, float bottomRadius,
                      float alpha, View root) {
         draw(canvas, bounds, topRadius, bottomRadius, alpha, root, owner);

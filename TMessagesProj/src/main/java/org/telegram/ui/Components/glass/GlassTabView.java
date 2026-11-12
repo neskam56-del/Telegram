@@ -294,7 +294,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
 
     @Override
     public void updateColors() {
-        if (modGlass && modLightContent) return;
+        if (modGlass) return;
         // every theme frame: applyColors allocates a color filter, so only when a color changed
         if (colorDefault != Theme.getColor(Theme.key_glass_tabUnselected, resourcesProvider) ||
             colorSelected != Theme.getColor(Theme.key_glass_tabSelected, resourcesProvider) ||
