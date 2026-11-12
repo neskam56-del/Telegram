@@ -7,6 +7,7 @@ import android.graphics.ColorFilter;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
+import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
@@ -14,6 +15,7 @@ import android.graphics.drawable.Drawable;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import org.telegram.ghostgram.ui.ModGlassStyle;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
@@ -48,7 +50,12 @@ public class ModWallpaperManager {
 
     /** Новый Drawable обоев. Сам ничего не держит, кроме настроек и общего кэша. */
     public static Drawable createDrawable() {
-        return new ModWallpaperDrawable();
+        return new ModWallpaperDrawable(true);
+    }
+
+    /** Вариант без точечной сетки (используется для фонового размытия под стеклянными панелями). */
+    public static Drawable createDrawable(boolean includeDotGrid) {
+        return new ModWallpaperDrawable(includeDotGrid);
     }
 
     /** Сбрасывает кэш, например при нехватке памяти. Drawable соберут картинку заново при следующей отрисовке. */
@@ -152,18 +159,53 @@ public class ModWallpaperManager {
         waiting.clear();
     }
 
-    /** Фон: цвет, градиент или картинка. Центрирование с обрезкой, затемнение сверху. */
+    /** Фон: дефолтный Liquid Glass / Flat фон либо пользовательские обои (цвет, градиент, картинка). */
     private static class ModWallpaperDrawable extends Drawable {
 
+        private final boolean includeDotGrid;
         private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
+        private final Paint radialPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint dotPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint dimPaint = new Paint();
         private final Rect src = new Rect();
+        private final RadialGradient[] defaultRadials = new RadialGradient[ModGlassStyle.WP_RADIAL_COLORS.length];
+        private int radialLeft = Integer.MIN_VALUE;
+        private int radialTop = Integer.MIN_VALUE;
+        private int radialW = -1;
+        private int radialH = -1;
         private int alpha = 255;
 
         private int shaderHeight;
         private int shaderTop;
         private int shaderColor1;
         private int shaderColor2;
+
+        ModWallpaperDrawable(boolean includeDotGrid) {
+            this.includeDotGrid = includeDotGrid;
+        }
+
+        private void ensureDefaultRadials(Rect bounds, int w, int h) {
+            if (radialLeft == bounds.left && radialTop == bounds.top && radialW == w && radialH == h) {
+                return;
+            }
+            radialLeft = bounds.left;
+            radialTop = bounds.top;
+            radialW = w;
+            radialH = h;
+            float refSize = Math.max(w, h);
+            for (int i = 0; i < ModGlassStyle.WP_RADIAL_COLORS.length; i++) {
+                float cx = bounds.left + w * ModGlassStyle.WP_RADIAL_SPECS[i][0];
+                float cy = bounds.top + h * ModGlassStyle.WP_RADIAL_SPECS[i][1];
+                float radius = Math.max(1f, refSize * ModGlassStyle.WP_RADIAL_SPECS[i][2]);
+                int c = ModGlassStyle.WP_RADIAL_COLORS[i];
+                defaultRadials[i] = new RadialGradient(
+                        cx, cy, radius,
+                        new int[] {c, c & 0x00FFFFFF},
+                        new float[] {0f, 1f},
+                        Shader.TileMode.CLAMP
+                );
+            }
+        }
 
         @Override
         public void draw(@NonNull Canvas canvas) {
@@ -174,11 +216,24 @@ public class ModWallpaperManager {
                 return;
             }
             if (ModConfig.wallpaperMode == ModConfig.WP_NONE) {
-                // Обои отключены: обычный фон экрана, чтобы он не оставался прозрачным.
                 paint.setShader(null);
-                paint.setColor(org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_windowBackgroundGray));
+                paint.setColor(ModGlassStyle.BG_BASE_COLOR);
                 paint.setAlpha(alpha);
                 canvas.drawRect(bounds, paint);
+
+                if (ModConfig.isGlassActive()) {
+                    ensureDefaultRadials(bounds, w, h);
+                    radialPaint.setAlpha(alpha);
+                    for (int i = 0; i < defaultRadials.length; i++) {
+                        radialPaint.setShader(defaultRadials[i]);
+                        canvas.drawRect(bounds, radialPaint);
+                    }
+                    if (includeDotGrid) {
+                        dotPaint.setShader(ModGlassStyle.getDotGridShader());
+                        dotPaint.setAlpha(Math.round(255f * ModGlassStyle.DOT_LAYER_ALPHA * (alpha / 255f)));
+                        canvas.drawRect(bounds, dotPaint);
+                    }
+                }
                 return;
             }
             paint.setAlpha(alpha);
@@ -206,9 +261,9 @@ public class ModWallpaperManager {
                 case ModConfig.WP_IMAGE: {
                     final Bitmap bitmap = obtain(this);
                     if (bitmap == null || bitmap.isRecycled()) {
-                        // Пока картинка собирается, показываем первый цвет, чтобы не было пустого экрана.
+                        // Пока картинка собирается, показываем базовый тёмный цвет.
                         paint.setShader(null);
-                        paint.setColor(ModConfig.wallpaperColor1);
+                        paint.setColor(ModGlassStyle.BG_BASE_COLOR);
                         paint.setAlpha(alpha);
                         canvas.drawRect(bounds, paint);
                     } else {

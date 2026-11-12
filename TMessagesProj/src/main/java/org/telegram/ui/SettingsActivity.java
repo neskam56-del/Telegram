@@ -63,8 +63,11 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.PhoneFormat.PhoneFormat;
+import org.telegram.ghostgram.GhostConfig;
 import org.telegram.ghostgram.ModConfig;
+import org.telegram.ghostgram.ModWallpaperManager;
 import org.telegram.ghostgram.ui.ModGlassBackground;
+import org.telegram.ghostgram.ui.ModGlassStyle;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.AuthTokensHelper;
@@ -186,6 +189,15 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     private ImageView cameraImageView;
     private TextView titleView;
     private TextView subtitleView;
+    private TextView usernameView;
+    private View modAvatarFallbackView;
+    private TextView modAvatarInitialView;
+    private final ModConfig.Listener modConfigListener = () -> {
+        if (listView != null) {
+            applyModGlass();
+            applyModWallpaper();
+        }
+    };
     private TextView versionView;
     private LinearLayout modActions;
     private ModGlassBackground modGlass;
@@ -226,7 +238,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             hasMainTabs = arguments.getBoolean("hasMainTabs", false);
         }
 
-        additionNavigationBarHeight = hasMainTabs ? dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS) : 0;
+        additionNavigationBarHeight = dp(ModGlassStyle.CONTENT_BOTTOM_PAD_DP);
         return super.onFragmentCreate();
     }
 
@@ -253,7 +265,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         }
         // Режим «нет» рисует обычный цвет фона, поэтому Drawable можно ставить всегда.
         // Но пока обои никогда не включались, ничего не трогаем: экран остаётся как был.
-        if (org.telegram.ghostgram.ModConfig.wallpaperMode == org.telegram.ghostgram.ModConfig.WP_NONE
+        if (false && org.telegram.ghostgram.ModConfig.wallpaperMode == org.telegram.ghostgram.ModConfig.WP_NONE
                 && !modWallpaperAttached) {
             return;
         }
@@ -266,6 +278,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     public View createView(Context context) {
         setHasOwnBackground(true);
         if (modGlass != null) modGlass.release();
+        ModConfig.addListener(modConfigListener);
         modGlassActive = ModConfig.isGlassActive();
         modWallpaper = org.telegram.ghostgram.ModWallpaperManager.createDrawable();
         contentView = new SizeNotifierFrameLayout(context) {
@@ -275,7 +288,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 updateAvatarHide();
                 super.dispatchDraw(canvas);
                 glassEngine.invalidate();
-                if (!hasMainTabs) {
+                if (!hasMainTabs && searchItem != null && searchItem.isSearchFieldVisible2()) {
                     AndroidUtilities.drawNavigationBarProtection(canvas, this, getThemedColor(Theme.key_windowBackgroundWhite), navigationBarHeight);
                 }
             }
@@ -365,7 +378,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         listView = new UniversalRecyclerView(this, this::fillItems, this::onClick, this::onLongClick) {
             @Override
             public void drawBackgroundRect(Canvas canvas, RectF rect, float topRadius, float bottomRadius, float alpha) {
-                if (modGlassActive && !searchItem.isSearchFieldVisible2() && modGlass != null) {
+                if (!searchItem.isSearchFieldVisible2() && modGlass != null) {
                     modGlass.draw(canvas, rect, topRadius, bottomRadius, alpha, contentView);
                 } else {
                     super.drawBackgroundRect(canvas, rect, topRadius, bottomRadius, alpha);
@@ -408,113 +421,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         imageUpdater.parentFragment = this;
         imageUpdater.setDelegate(this);
 
-        topView = new FrameLayout(context);
-
-        // the avatar is drawn above the list, where it can hide into the camera cutout as in the profile;
-        // this view in the list takes its touches, its place and its press scale
-        avatarTouchView = new FrameLayout(context) {
-            @Override
-            public void setScaleX(float scaleX) {
-                super.setScaleX(scaleX);
-                updateAvatarHide();
-            }
-        };
-        topView.addView(avatarTouchView, LayoutHelper.createFrame(120, 120, Gravity.CENTER_HORIZONTAL | Gravity.TOP, 0, 23 - 12, 0, 0));
-        avatarTouchView.setOnClickListener(v -> {
-            TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(UserConfig.getInstance(currentAccount).getClientUserId());
-            if (user == null) {
-                user = UserConfig.getInstance(currentAccount).getCurrentUser();
-            }
-            if (user == null) {
-                return;
-            }
-            imageUpdater.openMenu(user.photo != null && user.photo.photo_big != null && !(user.photo instanceof TLRPC.TL_userProfilePhotoEmpty), () -> {
-                MessagesController.getInstance(currentAccount).deleteUserPhoto(null);
-            }, dialog -> {
-
-            }, 0);
-        });
-        ScaleStateListAnimator.apply(avatarTouchView);
-        topView.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> updateAvatarHide());
-
-        avatarGooey = new ProfileGooeyView(context) {
-            @Override
-            public boolean dispatchTouchEvent(MotionEvent ev) {
-                return false;
-            }
-        };
-        avatarContainer = new FrameLayout(context);
-        avatarContainer.setPivotX(0);
-        avatarContainer.setPivotY(0);
-        avatarGooey.addView(avatarContainer, LayoutHelper.createFrame(90, 90, Gravity.TOP | Gravity.LEFT));
-        contentView.addView(avatarGooey, contentView.indexOfChild(listView) + 1, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-
-        avatarDrawable = new AvatarDrawable();
-        avatarView = new BackupImageView(context);
-        avatarView.setRoundRadius(dp(90));
-        avatarContainer.addView(avatarView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-
-        avatarProgressView = new RadialProgressView(context) {
-            private Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-
-            {
-                paint.setColor(0x55000000);
-            }
-
-            @Override
-            protected void onDraw(Canvas canvas) {
-                if (avatarView != null && avatarView.getImageReceiver().hasNotThumb()) {
-                    paint.setAlpha((int) (0x55 * avatarView.getImageReceiver().getCurrentAlpha()));
-                    canvas.drawCircle(getMeasuredWidth() / 2.0f, getMeasuredHeight() / 2.0f, getMeasuredWidth() / 2.0f, paint);
-                }
-                super.onDraw(canvas);
-            }
-        };
-        avatarProgressView.setSize(AndroidUtilities.dp(26));
-        avatarProgressView.setProgressColor(0xffffffff);
-        avatarProgressView.setNoProgress(false);
-        avatarContainer.addView(avatarProgressView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-        showAvatarProgress(false, false);
-
-        cameraButton = new FrameLayout(context);
-        ThemeBind.fillBackground(cameraButton, Theme.createCircleDrawable(dp(32), getThemedColor(Theme.key_windowBackgroundGray)), ThemeBind.of(Theme.key_windowBackgroundGray), getResourceProvider());
-        cameraButton.setPadding(dp(2), dp(2), dp(2), dp(2));
-        cameraBackground = new FrameLayout(context);
-        ThemeBind.fillBackground(cameraBackground, Theme.createCircleDrawable(dp(30), getThemedColor(Theme.key_featuredStickers_addButton)), ThemeBind.of(Theme.key_featuredStickers_addButton), getResourceProvider());
-        cameraImageView = new ImageView(context);
-        cameraImageView.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        cameraImageView.setImageResource(R.drawable.filled_premium_camera);
-        cameraBackground.addView(cameraImageView, LayoutHelper.createFrame(22, 22, Gravity.CENTER));
-        cameraButton.addView(cameraBackground, LayoutHelper.createFrame(30, 30));
-        // over the avatar, so it scales and hides with it; its touches go to the place of the avatar in the list
-        // over the avatar layer, not in it: the goo is made of the avatar only. It follows the avatar
-        // (at its bottom right, past its edge), its touches go to the place of the avatar in the list
-        cameraButton.setPivotX(0);
-        cameraButton.setPivotY(0);
-        contentView.addView(cameraButton, contentView.indexOfChild(avatarGooey) + 1, LayoutHelper.createFrame(34, 34, Gravity.LEFT | Gravity.TOP));
-
-        titleView = new TextView(context);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 22);
-        titleView.setTypeface(AndroidUtilities.bold());
-        titleView.setGravity(Gravity.CENTER);
-        titleView.setSingleLine();
-        titleView.setEllipsize(TextUtils.TruncateAt.END);
-        topView.addView(titleView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL | Gravity.TOP, 16, 138.333f - 12, 16, 0));
-
-        subtitleView = new TextView(context);
-        subtitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
-        subtitleView.setGravity(Gravity.CENTER);
-        subtitleView.setSingleLine();
-        subtitleView.setEllipsize(TextUtils.TruncateAt.END);
-        topView.addView(subtitleView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL | Gravity.TOP, 0, 168 - 12, 0, 0));
-
-        modActions = new LinearLayout(context);
-        modActions.setGravity(Gravity.CENTER);
-        topView.addView(modActions, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, Gravity.TOP, 16, 190, 16, 0));
-        addModAction(context, "+", getString(R.string.AddAccount), this::addModAccount);
-        addModAction(context, null, getString(R.string.AddPhoto), () -> avatarTouchView.performClick());
-        addModAction(context, "@", getString(R.string.Username), () -> presentSettingFragment(new ChangeUsernameActivity()));
-        modActions.setVisibility(modGlassActive ? View.VISIBLE : View.GONE);
+        buildModProfileHeader(context);
 
         versionView = new TextView(context);
         versionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
@@ -558,6 +465,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     public void onFragmentDestroy() {
         super.onFragmentDestroy();
         if (modGlass != null) modGlass.release();
+        ModConfig.removeListener(modConfigListener);
         if (observersGroup != null) {
             observersGroup.removeAllObservers();
             observersGroup = null;
@@ -580,6 +488,143 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         }
     }
 
+    private void buildModProfileHeader(Context context) {
+        topView = new FrameLayout(context);
+
+        LinearLayout headerRoot = new LinearLayout(context);
+        headerRoot.setOrientation(LinearLayout.VERTICAL);
+        int sidePad = dp(ModGlassStyle.SCREEN_H_PAD_DP + ModGlassStyle.HEADER_SIDE_PAD_DP);
+        headerRoot.setPadding(sidePad, dp(6), sidePad, 0);
+        topView.addView(headerRoot, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        LinearLayout profileRow = new LinearLayout(context);
+        profileRow.setOrientation(LinearLayout.HORIZONTAL);
+        profileRow.setGravity(Gravity.CENTER_VERTICAL);
+        profileRow.setPadding(0, 0, 0, dp(ModGlassStyle.HEADER_BOTTOM_PAD_DP));
+        headerRoot.addView(profileRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        final int avatarSizeDp = ModGlassStyle.AVATAR_SIZE_DP;
+        final float ringStrokePx = Math.max(1f, AndroidUtilities.dpf2(ModGlassStyle.AVATAR_RING_WIDTH_DP));
+        avatarTouchView = new FrameLayout(context) {
+            private final Paint ringPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            {
+                ringPaint.setStyle(Paint.Style.STROKE);
+                ringPaint.setColor(ModGlassStyle.AVATAR_RING_COLOR);
+                ringPaint.setStrokeWidth(ringStrokePx);
+            }
+
+            @Override
+            protected void dispatchDraw(@NonNull Canvas canvas) {
+                super.dispatchDraw(canvas);
+                float cx = getWidth() * 0.5f;
+                float cy = getHeight() * 0.5f;
+                float r = Math.min(cx, cy) - ringStrokePx * 0.5f;
+                if (r > 0) {
+                    canvas.drawCircle(cx, cy, r, ringPaint);
+                }
+            }
+        };
+        avatarTouchView.setOnClickListener(v -> {
+            TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(UserConfig.getInstance(currentAccount).getClientUserId());
+            if (user == null) {
+                user = UserConfig.getInstance(currentAccount).getCurrentUser();
+            }
+            if (user == null) {
+                return;
+            }
+            imageUpdater.openMenu(user.photo != null && user.photo.photo_big != null && !(user.photo instanceof TLRPC.TL_userProfilePhotoEmpty), () -> {
+                MessagesController.getInstance(currentAccount).deleteUserPhoto(null);
+            }, dialog -> {
+            }, 0);
+        });
+        ScaleStateListAnimator.apply(avatarTouchView);
+        profileRow.addView(avatarTouchView, LayoutHelper.createLinear(avatarSizeDp, avatarSizeDp));
+
+        GradientDrawable fallbackBg = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[] { ModGlassStyle.AVATAR_GRADIENT_START, ModGlassStyle.AVATAR_GRADIENT_END }
+        );
+        fallbackBg.setShape(GradientDrawable.OVAL);
+        modAvatarFallbackView = new View(context);
+        modAvatarFallbackView.setBackground(fallbackBg);
+        avatarTouchView.addView(modAvatarFallbackView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+
+        modAvatarInitialView = new TextView(context);
+        modAvatarInitialView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, ModGlassStyle.AVATAR_INITIAL_SP);
+        modAvatarInitialView.setTypeface(AndroidUtilities.bold());
+        modAvatarInitialView.setTextColor(0xFFFFFFFF);
+        modAvatarInitialView.setGravity(Gravity.CENTER);
+        avatarTouchView.addView(modAvatarInitialView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+
+        avatarContainer = new FrameLayout(context);
+        avatarTouchView.addView(avatarContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+
+        avatarDrawable = new AvatarDrawable();
+        avatarView = new BackupImageView(context);
+        avatarView.setRoundRadius(dp(avatarSizeDp / 2f));
+        avatarContainer.addView(avatarView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+
+        avatarProgressView = new RadialProgressView(context) {
+            private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            {
+                paint.setColor(0x55000000);
+            }
+
+            @Override
+            protected void onDraw(Canvas canvas) {
+                if (avatarView != null && avatarView.getImageReceiver().hasNotThumb()) {
+                    paint.setAlpha((int) (0x55 * avatarView.getImageReceiver().getCurrentAlpha()));
+                    canvas.drawCircle(getMeasuredWidth() / 2.0f, getMeasuredHeight() / 2.0f, getMeasuredWidth() / 2.0f, paint);
+                }
+                super.onDraw(canvas);
+            }
+        };
+        avatarProgressView.setSize(AndroidUtilities.dp(26));
+        avatarProgressView.setProgressColor(0xffffffff);
+        avatarProgressView.setNoProgress(false);
+        avatarContainer.addView(avatarProgressView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        showAvatarProgress(false, false);
+
+        LinearLayout infoColumn = new LinearLayout(context);
+        infoColumn.setOrientation(LinearLayout.VERTICAL);
+        infoColumn.setGravity(Gravity.CENTER_VERTICAL);
+        profileRow.addView(infoColumn, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f, Gravity.CENTER_VERTICAL, ModGlassStyle.HEADER_TEXT_START_GAP_DP, 0, 0, 0));
+
+        titleView = new TextView(context);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, ModGlassStyle.HEADER_NAME_SP);
+        titleView.setTypeface(AndroidUtilities.bold());
+        titleView.setTextColor(ModGlassStyle.HEADER_NAME_COLOR);
+        titleView.setGravity(Gravity.START);
+        titleView.setSingleLine();
+        titleView.setEllipsize(TextUtils.TruncateAt.END);
+        infoColumn.addView(titleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        subtitleView = new TextView(context);
+        subtitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, ModGlassStyle.HEADER_PHONE_SP);
+        subtitleView.setTextColor(ModGlassStyle.HEADER_PHONE_COLOR);
+        subtitleView.setGravity(Gravity.START);
+        subtitleView.setSingleLine();
+        subtitleView.setEllipsize(TextUtils.TruncateAt.END);
+        infoColumn.addView(subtitleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, ModGlassStyle.HEADER_PHONE_TOP_MARGIN_DP, 0, 0));
+
+        usernameView = new TextView(context);
+        usernameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, ModGlassStyle.HEADER_USERNAME_SP);
+        usernameView.setTextColor(ModGlassStyle.HEADER_USERNAME_COLOR);
+        usernameView.setGravity(Gravity.START);
+        usernameView.setSingleLine();
+        usernameView.setEllipsize(TextUtils.TruncateAt.END);
+        infoColumn.addView(usernameView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 1, 0, 0));
+
+        modActions = new LinearLayout(context);
+        modActions.setOrientation(LinearLayout.HORIZONTAL);
+        modActions.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        modActions.setPadding(0, 0, 0, dp(ModGlassStyle.ACTION_ROW_BOTTOM_PAD_DP));
+        headerRoot.addView(modActions, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        addModAction(context, ModGlassStyle.GLYPH_PLUS, getString(R.string.AddAccount), this::addModAccount, false);
+        addModAction(context, ModGlassStyle.GLYPH_CAMERA, getString(R.string.AddPhoto), () -> avatarTouchView.performClick(), true);
+        addModAction(context, ModGlassStyle.GLYPH_AT, getString(R.string.Username), () -> presentSettingFragment(new ChangeUsernameActivity()), true);
+    }
     public void setInfo() {
         setInfo(getUserConfig().getCurrentUser());
     }
@@ -588,18 +633,38 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         if (avatarView == null) return;
         if (avatarUploadingRequest != -1) return;
 
-        avatarDrawable.setInfo(user);
-        avatarView.setForUserOrChat(user, avatarDrawable);
-        titleView.setText(UserObject.getUserName(user));
-        final StringBuilder sb = new StringBuilder();
-        if (user != null) {
-            sb.append(org.telegram.ghostgram.GhostConfig.formatMaskedPhone(user.phone));
+        final String displayName = UserObject.getUserName(user);
+        final boolean hasPhoto = user != null && user.photo != null
+                && !(user.photo instanceof TLRPC.TL_userProfilePhotoEmpty)
+                && (user.photo.photo_small != null || user.photo.photo_big != null);
+        if (hasPhoto) {
+            avatarDrawable.setInfo(user);
+            avatarView.setForUserOrChat(user, avatarDrawable);
+            avatarView.setVisibility(View.VISIBLE);
+            if (modAvatarFallbackView != null) modAvatarFallbackView.setVisibility(View.GONE);
+            if (modAvatarInitialView != null) modAvatarInitialView.setVisibility(View.GONE);
+        } else {
+            avatarView.setVisibility(View.INVISIBLE);
+            if (modAvatarFallbackView != null) modAvatarFallbackView.setVisibility(View.VISIBLE);
+            if (modAvatarInitialView != null) {
+                modAvatarInitialView.setVisibility(View.VISIBLE);
+                String trimmed = displayName != null ? displayName.trim() : "";
+                String initial = trimmed.isEmpty() ? "?" : trimmed.substring(0, 1).toUpperCase();
+                modAvatarInitialView.setText(initial);
+            }
         }
+
+        titleView.setText(displayName);
+        subtitleView.setText(user != null ? GhostConfig.formatMaskedPhone(user.phone) : "");
         final String username = UserObject.getPublicUsername(user);
-        if (username != null) {
-            sb.append(" • @").append(username);
+        if (usernameView != null) {
+            if (!TextUtils.isEmpty(username)) {
+                usernameView.setText("@" + username);
+                usernameView.setVisibility(View.VISIBLE);
+            } else {
+                usernameView.setVisibility(View.GONE);
+            }
         }
-        subtitleView.setText(sb);
 
         versionView.setText(getVersionName());
     }
@@ -608,9 +673,9 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     private int lastNavigationBarColor;
 
     public void updateColors() {
-        boolean wallpaperGlass = modGlassActive && ModConfig.wallpaperMode != ModConfig.WP_NONE;
-        titleView.setTextColor(wallpaperGlass ? 0xFFFFFFFF : getThemedColor(Theme.key_windowBackgroundWhiteBlackText));
-        subtitleView.setTextColor(wallpaperGlass ? 0xDDFFFFFF : getThemedColor(Theme.key_windowBackgroundWhiteGrayText));
+        titleView.setTextColor(ModGlassStyle.HEADER_NAME_COLOR);
+        subtitleView.setTextColor(ModGlassStyle.HEADER_PHONE_COLOR);
+        if (usernameView != null) usernameView.setTextColor(ModGlassStyle.HEADER_USERNAME_COLOR);
         searchItem.updateColor();
 
         final int navigationBarColor = getThemedColor(Theme.key_windowBackgroundWhite);
@@ -685,14 +750,15 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     private void applyModGlass() {
         if (listView == null || modActions == null) return;
         modGlassActive = ModConfig.isGlassActive();
-        boolean glassList = modGlassActive && !searchItem.isSearchFieldVisible2();
-        listView.setSectionsDrawBackground(!glassList);
-        listView.setLegacySections(glassList);
-        listView.setSections(dp(12), dp(glassList ? 22 : 16), false);
-        modActions.setVisibility(modGlassActive ? View.VISIBLE : View.GONE);
+        boolean customCards = !searchItem.isSearchFieldVisible2();
+        listView.setSectionsDrawBackground(!customCards);
+        listView.setLegacySections(customCards);
+        listView.setSections(dp(ModGlassStyle.SCREEN_H_PAD_DP), dp(customCards ? ModGlassStyle.CARD_RADIUS_DP : 16), false);
+        modActions.setVisibility(View.VISIBLE);
+        if (modGlass != null) modGlass.invalidate();
         listView.adapter.update(false);
         updateColors();
-        if (modGlassActive && !callsCountRequested) {
+        if (!callsCountRequested) {
             callsCountRequested = true;
             TLRPC.TL_messages_search request = new TLRPC.TL_messages_search();
             request.peer = new TLRPC.TL_inputPeerEmpty();
@@ -712,38 +778,31 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         }
     }
 
-    private void addModAction(Context context, String label, String description, Runnable action) {
+    private void addModAction(Context context, int glyphType, String description, Runnable action, boolean withStartGap) {
+        final int circleSize = ModGlassStyle.ACTION_CIRCLE_SIZE_DP;
         FrameLayout button = new FrameLayout(context) {
             private final RectF bounds = new RectF();
 
             @Override
-            protected void dispatchDraw(Canvas canvas) {
-                if (modGlassActive) {
-                    bounds.set(0, 0, getWidth(), getHeight());
-                    modGlass.draw(canvas, bounds, getWidth() / 2f, getWidth() / 2f, 1f, contentView, this);
+            protected void dispatchDraw(@NonNull Canvas canvas) {
+                bounds.set(0, 0, getWidth(), getHeight());
+                float r = getWidth() * 0.5f;
+                if (modGlass != null) {
+                    modGlass.draw(canvas, bounds, r, r, 1f, contentView, this);
                 }
                 super.dispatchDraw(canvas);
             }
         };
-        if (label == null) {
-            ImageView icon = new ImageView(context);
-            icon.setImageResource(R.drawable.filled_premium_camera);
-            icon.setColorFilter(0xFFFFFFFF);
-            button.addView(icon, LayoutHelper.createFrame(24, 24, Gravity.CENTER));
-        } else {
-            TextView text = new TextView(context);
-            text.setText(label);
-            text.setTextSize(25);
-            text.setTextColor(0xFFFFFFFF);
-            text.setGravity(Gravity.CENTER);
-            button.addView(text, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-        }
+        ImageView icon = new ImageView(context);
+        icon.setImageDrawable(ModGlassStyle.createGlyphDrawable(glyphType, ModGlassStyle.ACTION_ICON_SIZE_DP, 0xFFFFFFFF));
+        icon.setScaleType(ImageView.ScaleType.CENTER);
+        button.addView(icon, LayoutHelper.createFrame(ModGlassStyle.ACTION_ICON_SIZE_DP, ModGlassStyle.ACTION_ICON_SIZE_DP, Gravity.CENTER));
         button.setContentDescription(description);
         button.setBackground(Theme.createSelectorDrawable(0x22FFFFFF, Theme.RIPPLE_MASK_CIRCLE_AUTO));
         button.setOnClickListener(v -> action.run());
-        modActions.addView(button, LayoutHelper.createLinear(48, 48, Gravity.CENTER_VERTICAL, 8, 0, 8, 0));
+        int startMargin = withStartGap ? ModGlassStyle.ACTION_CIRCLE_GAP_DP : 0;
+        modActions.addView(button, LayoutHelper.createLinear(circleSize, circleSize, Gravity.CENTER_VERTICAL, startMargin, 0, 0, 0));
     }
-
     private void addModAccount() {
         int freeAccounts = 0;
         Integer available = null;
@@ -871,7 +930,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             return;
         }
 
-        items.add(UItem.asCustomShadow(topView, modGlassActive ? 252 : 200 - 12));
+        items.add(UItem.asCustomShadow(topView, 158));
 
         accountNumbers.clear();
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
@@ -945,10 +1004,27 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             items.add(UItem.asShadow(null));
         }
 
-        if (modGlassActive) {
-            items.add(SettingCell.Factory.of(101, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.settings_account, getString(R.string.MyProfile)));
-            items.add(SettingCell.Factory.of(100, 0xFF2EA6FF, 0xFF1565C0, R.drawable.msg_theme, "Настройки мода"));
-            items.add(UItem.asShadow(null));
+        boolean modOn = GhostConfig.ghostModeEnabled || GhostConfig.antiDeleteEnabled || ModConfig.glassEnabled;
+        items.add(SettingCell.Factory.of(101, ModGlassStyle.TILE_MY_PROFILE, ModGlassStyle.TILE_MY_PROFILE, R.drawable.settings_account, "Мой профиль"));
+        items.add(SettingCell.Factory.of(100, ModGlassStyle.TILE_MOD_SETTINGS, ModGlassStyle.TILE_MOD_SETTINGS, -ModGlassStyle.GLYPH_GHOST, "Настройки мода", null, modOn ? "Вкл" : null));
+        items.add(UItem.asShadow(null));
+
+        items.add(SettingCell.Factory.of(102, ModGlassStyle.TILE_SAVED_MESSAGES, ModGlassStyle.TILE_SAVED_MESSAGES, R.drawable.msg_saved, "Избранное"));
+        items.add(SettingCell.Factory.of(103, ModGlassStyle.TILE_RECENT_CALLS, ModGlassStyle.TILE_RECENT_CALLS, R.drawable.msg_calls, "Недавние звонки", null, recentCallsCount < 0 ? null : LocaleController.formatNumber(recentCallsCount, ',')));
+        items.add(SettingCell.Factory.of(8, ModGlassStyle.TILE_DEVICES, ModGlassStyle.TILE_DEVICES, R.drawable.settings_devices, "Устройства"));
+        items.add(SettingCell.Factory.of(7, ModGlassStyle.TILE_FOLDERS, ModGlassStyle.TILE_FOLDERS, R.drawable.settings_folders, "Папки с чатами"));
+        items.add(UItem.asShadow(null));
+
+        items.add(SettingCell.Factory.of(104, ModGlassStyle.TILE_LIQUID_GLASS, ModGlassStyle.TILE_LIQUID_GLASS, -ModGlassStyle.GLYPH_LIQUID_GLASS, "Liquid Glass", "Стеклянные панели и размытие"));
+        items.add(SettingCell.Factory.of(5, ModGlassStyle.TILE_NOTIFICATIONS, ModGlassStyle.TILE_NOTIFICATIONS, R.drawable.settings_sounds, "Уведомления и звуки"));
+        items.add(SettingCell.Factory.of(1, ModGlassStyle.TILE_DEVICES, ModGlassStyle.TILE_DEVICES, R.drawable.settings_account, getString(R.string.SettingsAccount)));
+        items.add(SettingCell.Factory.of(2, ModGlassStyle.TILE_CHAT_SETTINGS, ModGlassStyle.TILE_CHAT_SETTINGS, R.drawable.settings_chat, getString(R.string.SettingsChat)));
+        items.add(SettingCell.Factory.of(3, ModGlassStyle.TILE_PRIVACY, ModGlassStyle.TILE_PRIVACY, R.drawable.settings_privacy, getString(R.string.SettingsPrivacySecurity)));
+        items.add(SettingCell.Factory.of(6, ModGlassStyle.TILE_DATA, ModGlassStyle.TILE_DATA, R.drawable.settings_data, getString(R.string.SettingsData)));
+        items.add(SettingCell.Factory.of(9, ModGlassStyle.TILE_LITE_MODE, ModGlassStyle.TILE_LITE_MODE, R.drawable.settings_power, getString(R.string.SettingsPowerSaving)));
+        items.add(SettingCell.Factory.of(10, ModGlassStyle.TILE_LANGUAGE, ModGlassStyle.TILE_LANGUAGE, R.drawable.settings_language, getString(R.string.SettingsLanguage), null, LocaleController.getCurrentLanguageName()));
+        items.add(SettingCell.Factory.of(99, ModGlassStyle.TILE_MOD_SETTINGS, ModGlassStyle.TILE_MOD_SETTINGS, R.drawable.msg_secret, "Ghostgram Settings"));
+        items.add(UItem.asShadow(null));
             items.add(SettingCell.Factory.of(102, IconBackgroundColors.BLUE.top, IconBackgroundColors.BLUE.bottom, R.drawable.msg_saved, getString(R.string.SavedMessages)));
             items.add(SettingCell.Factory.of(103, IconBackgroundColors.GREEN.top, IconBackgroundColors.GREEN.bottom, R.drawable.msg_calls, getString(R.string.VoipChatRecentCalls), null, recentCallsCount < 0 ? null : LocaleController.formatNumber(recentCallsCount, ',')));
             items.add(SettingCell.Factory.of(8, IconBackgroundColors.CYAN.top, IconBackgroundColors.CYAN.bottom, R.drawable.settings_devices, getString(R.string.SettingsDevices)));
@@ -1023,33 +1099,12 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         }
 
         items.add(UItem.asCustomShadow(versionView));
-        if (modGlassActive) {
-            // Признак хранится в UItem, а не в глобальном SettingCell: другие экраны не меняются.
-            boolean light = ModConfig.wallpaperMode != ModConfig.WP_NONE;
-            for (int i = 0; i < items.size(); i++) {
-                UItem item = items.get(i);
-                if (item.instanceOf(SettingCell.Factory.class)) {
-                    item.accent = true;
-                    item.checked = light;
-                }
-            }
-        }
-    }
-
-    private void presentSettingFragment(BaseFragment fragment) {
-        if (AndroidUtilities.isTablet() && LaunchActivity.instance != null && LaunchActivity.instance.getRightActionBarLayout() != null) {
-            final INavigationLayout layout = LaunchActivity.instance.getRightActionBarLayout();
-            if (!layout.getFragmentStack().isEmpty()) {
-                for (int a = 0; a < layout.getFragmentStack().size() - 1; a++) {
-                    layout.removeFragmentFromStack(layout.getFragmentStack().get(0));
-                    a--;
-                }
-                layout.closeLastFragment(false);
-            }
-            layout.presentFragment(new INavigationLayout.NavigationParams(fragment).setNoAnimation(true).forceRightLayout());
-        } else {
-            presentFragment(fragment);
-        }
+        for (int i = 0; i < items.size(); i++) {
+            UItem item = items.get(i);
+            if (item.instanceOf(SettingCell.Factory.class)) {
+                item.accent = true;
+                item.checked = true;
+            }        }
     }
 
     private void onClick(UItem item, View view, int position, float x, float y) {
@@ -1137,7 +1192,12 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             case 99:
                 presentSettingFragment(new org.telegram.ghostgram.ui.GhostgramSettingsActivity());
                 break;
-            case 100:
+            case 104:
+                ModConfig.setGlassEnabled(!ModConfig.glassEnabled);
+                if (view instanceof SettingCell) {
+                    ((SettingCell) view).setSwitchChecked(ModConfig.glassEnabled, true);
+                }
+                break;            case 100:
                 presentSettingFragment(new org.telegram.ghostgram.ui.ModSettingsActivity());
                 break;
 
@@ -1482,11 +1542,14 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         private final TextView titleView;
         private final TextView subtitleView;
         private final TextView valueView;
+        private final ImageView chevronView;
+        private final ModSwitchView switchView;
         private final boolean mini;
         private boolean hasBackground = true;
         private boolean glassStyle;
         private boolean glassLightText;
         private boolean glassDivider;
+        private boolean isSwitchRow;
         private final int originalValueMaxWidth;
         private final Paint glassPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
@@ -1500,6 +1563,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             this.resourcesProvider = resourcesProvider;
             this.mini = mini;
             setOrientation(HORIZONTAL);
+            setGravity(Gravity.CENTER_VERTICAL);
 
             iconLayout = new FrameLayout(context);
             iconLayout.setBackground(iconBackground = new Background());
@@ -1513,33 +1577,116 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
 
             titleView = new TextView(context);
             titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+            titleView.setSingleLine();
+            titleView.setEllipsize(TextUtils.TruncateAt.END);
             textLayout.addView(titleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 0));
 
             subtitleView = new TextView(context);
             subtitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
-            textLayout.addView(subtitleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 4, 0, 0));
+            subtitleView.setSingleLine();
+            subtitleView.setEllipsize(TextUtils.TruncateAt.END);
+            textLayout.addView(subtitleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
 
             valueView = new TextView(context);
             valueView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
             originalValueMaxWidth = valueView.getMaxWidth();
+
+            chevronView = new ImageView(context);
+            chevronView.setScaleType(ImageView.ScaleType.CENTER);
+            chevronView.setImageDrawable(ModGlassStyle.createGlyphDrawable(ModGlassStyle.GLYPH_CHEVRON_RIGHT, ModGlassStyle.CHEVRON_SIZE_DP, ModGlassStyle.CHEVRON_COLOR));
+            chevronView.setVisibility(View.GONE);
+
+            switchView = new ModSwitchView(context);
+            switchView.setVisibility(View.GONE);
+
             if (LocaleController.isRTL) {
-                addView(valueView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL, 20, 0, 0, 0));
-                addView(textLayout, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1, Gravity.CENTER_VERTICAL | Gravity.FILL_HORIZONTAL, 20, 0, mini ? 12 : 18, 0));
+                addView(switchView, LayoutHelper.createLinear(ModGlassStyle.SWITCH_WIDTH_DP, ModGlassStyle.SWITCH_HEIGHT_DP, Gravity.CENTER_VERTICAL, 0, 0, 8, 0));
+                addView(chevronView, LayoutHelper.createLinear(ModGlassStyle.CHEVRON_SIZE_DP, ModGlassStyle.CHEVRON_SIZE_DP, Gravity.CENTER_VERTICAL));
+                addView(valueView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL, 12, 0, 0, 0));
+                addView(textLayout, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1, Gravity.CENTER_VERTICAL | Gravity.FILL_HORIZONTAL, 14, 0, mini ? 12 : 18, 0));
                 addView(iconLayout, LayoutHelper.createLinear(28, 28, Gravity.CENTER_VERTICAL | Gravity.RIGHT, 0, 0, mini ? 9 : 18, 0));
             } else {
                 addView(iconLayout, LayoutHelper.createLinear(28, 28, Gravity.CENTER_VERTICAL | Gravity.LEFT, mini ? 9 : 18, 0, 0, 0));
-                addView(textLayout, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1, Gravity.CENTER_VERTICAL | Gravity.FILL_HORIZONTAL,  mini ? 12 : 18, 0, 20, 0));
-                addView(valueView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL, 0, 0, 20, 0));
+                addView(textLayout, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1, Gravity.CENTER_VERTICAL | Gravity.FILL_HORIZONTAL, mini ? 12 : 18, 0, 14, 0));
+                addView(valueView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL, 0, 0, 8, 0));
+                addView(chevronView, LayoutHelper.createLinear(ModGlassStyle.CHEVRON_SIZE_DP, ModGlassStyle.CHEVRON_SIZE_DP, Gravity.CENTER_VERTICAL));
+                addView(switchView, LayoutHelper.createLinear(ModGlassStyle.SWITCH_WIDTH_DP, ModGlassStyle.SWITCH_HEIGHT_DP, Gravity.CENTER_VERTICAL));
             }
             updateColors();
         }
 
+        public void setSwitchChecked(boolean checked, boolean animated) {
+            if (switchView != null) {
+                switchView.setChecked(checked, animated);
+            }
+        }
+
+        private void applyRowMetrics() {
+            LinearLayout.LayoutParams iconLp = (LinearLayout.LayoutParams) iconLayout.getLayoutParams();
+            LinearLayout.LayoutParams textLp = (LinearLayout.LayoutParams) textLayout.getLayoutParams();
+            FrameLayout.LayoutParams glyphLp = (FrameLayout.LayoutParams) iconView.getLayoutParams();
+            if (glassStyle) {
+                int hPad = dp(ModGlassStyle.ROW_H_PAD_DP);
+                setPadding(hPad, 0, hPad, 0);
+                int tilePx = dp(ModGlassStyle.ICON_TILE_SIZE_DP);
+                iconLp.width = tilePx;
+                iconLp.height = tilePx;
+                iconLp.leftMargin = 0;
+                iconLp.rightMargin = 0;
+                int glyphPx = dp(ModGlassStyle.ICON_GLYPH_SIZE_DP);
+                glyphLp.width = glyphPx;
+                glyphLp.height = glyphPx;
+                int gapPx = dp(ModGlassStyle.ROW_GAP_DP);
+                if (LocaleController.isRTL) {
+                    textLp.leftMargin = gapPx;
+                    textLp.rightMargin = gapPx;
+                } else {
+                    textLp.leftMargin = gapPx;
+                    textLp.rightMargin = gapPx;
+                }
+                iconBackground.setCornerRadiusDp(ModGlassStyle.ICON_TILE_RADIUS_DP);
+                titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, ModGlassStyle.ROW_TITLE_SP);
+                subtitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, ModGlassStyle.ROW_SUBTITLE_SP);
+                valueView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, ModGlassStyle.ROW_VALUE_SP);
+                chevronView.setVisibility(isSwitchRow ? View.GONE : View.VISIBLE);
+                switchView.setVisibility(isSwitchRow ? View.VISIBLE : View.GONE);
+            } else {
+                setPadding(0, 0, 0, 0);
+                int tilePx = dp(28);
+                iconLp.width = tilePx;
+                iconLp.height = tilePx;
+                iconLp.leftMargin = LocaleController.isRTL ? 0 : dp(mini ? 9 : 18);
+                iconLp.rightMargin = LocaleController.isRTL ? dp(mini ? 9 : 18) : 0;
+                int glyphPx = dp(24);
+                glyphLp.width = glyphPx;
+                glyphLp.height = glyphPx;
+                textLp.leftMargin = LocaleController.isRTL ? dp(20) : dp(mini ? 12 : 18);
+                textLp.rightMargin = LocaleController.isRTL ? dp(mini ? 12 : 18) : dp(20);
+                iconBackground.setCornerRadiusDp(10f);
+                titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+                subtitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+                valueView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+                chevronView.setVisibility(View.GONE);
+                switchView.setVisibility(View.GONE);
+            }
+            iconLayout.setLayoutParams(iconLp);
+            textLayout.setLayoutParams(textLp);
+            iconView.setLayoutParams(glyphLp);
+        }
+
         @Override
         public void updateColors() {
-            titleView.setTextColor(glassLightText ? 0xFFFFFFFF : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-            subtitleView.setTextColor(glassLightText ? 0xCCFFFFFF : Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
-            valueView.setTextColor(glassLightText ? 0xDDFFFFFF : Theme.getColor(Theme.key_windowBackgroundWhiteBlueText, resourcesProvider));
-            iconBackground.setDrawBorder(hasBackground && (resourcesProvider != null ? resourcesProvider.isDark() : Theme.isCurrentThemeDark()));
+            if (glassStyle) {
+                titleView.setTextColor(ModGlassStyle.ROW_TITLE_COLOR);
+                subtitleView.setTextColor(ModGlassStyle.ROW_SUBTITLE_COLOR);
+                valueView.setTextColor(ModGlassStyle.ROW_VALUE_COLOR);
+                iconBackground.setDrawBorder(false);
+            } else {
+                titleView.setTextColor(glassLightText ? 0xFFFFFFFF : Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
+                subtitleView.setTextColor(glassLightText ? 0xCCFFFFFF : Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
+                valueView.setTextColor(glassLightText ? 0xDDFFFFFF : Theme.getColor(Theme.key_windowBackgroundWhiteBlueText, resourcesProvider));
+                iconBackground.setDrawBorder(hasBackground && (resourcesProvider != null ? resourcesProvider.isDark() : Theme.isCurrentThemeDark()));
+            }
         }
         @Override
         public void addColorKeys(HashSet<Integer> colors) {
@@ -1554,19 +1701,16 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         protected void dispatchDraw(Canvas canvas) {
             super.dispatchDraw(canvas);
             if (!glassStyle) return;
-            glassPaint.setColor(glassLightText ? 0xBBFFFFFF : Theme.getColor(Theme.key_windowBackgroundWhiteGrayIcon, resourcesProvider));
-            glassPaint.setStyle(Paint.Style.STROKE);
-            glassPaint.setStrokeWidth(AndroidUtilities.dpf2(1.5f));
-            float x = LocaleController.isRTL ? dp(15) : getWidth() - dp(15);
-            float y = getHeight() / 2f;
-            float direction = LocaleController.isRTL ? -1 : 1;
-            canvas.drawLine(x - direction * dp(2), y - dp(4), x + direction * dp(2), y, glassPaint);
-            canvas.drawLine(x + direction * dp(2), y, x - direction * dp(2), y + dp(4), glassPaint);
             if (glassDivider) {
-                glassPaint.setColor(glassLightText ? 0x26FFFFFF : 0x16000000);
-                glassPaint.setStrokeWidth(Math.max(1, AndroidUtilities.dpf2(0.5f)));
-                canvas.drawLine(LocaleController.isRTL ? dp(16) : dp(64), getHeight() - 1,
-                        getWidth() - dp(LocaleController.isRTL ? 64 : 16), getHeight() - 1, glassPaint);
+                glassPaint.setColor(ModGlassStyle.ROW_DIVIDER_COLOR);
+                glassPaint.setStyle(Paint.Style.STROKE);
+                glassPaint.setStrokeWidth(Math.max(1f, AndroidUtilities.dpf2(ModGlassStyle.ROW_DIVIDER_HEIGHT_DP)));
+                int startOffset = dp(ModGlassStyle.ROW_H_PAD_DP + ModGlassStyle.ICON_TILE_SIZE_DP + ModGlassStyle.ROW_GAP_DP);
+                int endOffset = dp(ModGlassStyle.ROW_H_PAD_DP);
+                float left = LocaleController.isRTL ? endOffset : startOffset;
+                float right = getWidth() - (LocaleController.isRTL ? startOffset : endOffset);
+                float y = getHeight() - glassPaint.getStrokeWidth() * 0.5f;
+                canvas.drawLine(left, y, right, y, glassPaint);
             }
         }
 
@@ -1582,11 +1726,22 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             subtitleView.setTranslationX(icon == 0 ? dp(2) : 0);
 
             iconBackground.setColor(iconColorTop, iconColorBottom);
-            iconView.setImageResource(icon);
+            if (icon < 0) {
+                iconView.clearColorFilter();
+                iconView.setImageDrawable(ModGlassStyle.createGlyphDrawable(-icon, ModGlassStyle.ICON_GLYPH_SIZE_DP, 0xFFFFFFFF));
+            } else {
+                iconView.setImageResource(icon);
+                if (glassStyle) {
+                    iconView.setColorFilter(0xFFFFFFFF);
+                } else {
+                    iconView.clearColorFilter();
+                }
+            }
             titleView.setText(title);
             subtitleView.setVisibility((twoLines = !TextUtils.isEmpty(subtitle)) ? View.VISIBLE : View.GONE);
             subtitleView.setText(subtitle);
             setValue(value);
+            applyRowMetrics();
             updateColors();
         }
 
@@ -1597,10 +1752,74 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
 
         @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            int heightDp = glassStyle
+                    ? (isSwitchRow ? ModGlassStyle.ROW_TALL_HEIGHT_DP : ModGlassStyle.ROW_HEIGHT_DP)
+                    : (mini ? 44 : twoLines ? 60 : 50);
             super.onMeasure(
                 MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(dp(mini ? 44 : twoLines ? 60 : 50), MeasureSpec.EXACTLY)
+                MeasureSpec.makeMeasureSpec(dp(heightDp), MeasureSpec.EXACTLY)
             );
+        }
+
+        public static class ModSwitchView extends View {
+            private final Paint trackPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final Paint thumbPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final RectF trackRect = new RectF();
+            private boolean checked;
+            private float progress;
+            private ValueAnimator animator;
+
+            public ModSwitchView(Context context) {
+                super(context);
+                thumbPaint.setColor(ModGlassStyle.SWITCH_THUMB_COLOR);
+            }
+
+            public void setChecked(boolean value, boolean animated) {
+                if (checked == value && animator == null) {
+                    progress = value ? 1f : 0f;
+                    invalidate();
+                    return;
+                }
+                checked = value;
+                if (animator != null) {
+                    animator.cancel();
+                    animator = null;
+                }
+                float target = value ? 1f : 0f;
+                if (!animated) {
+                    progress = target;
+                    invalidate();
+                    return;
+                }
+                animator = ValueAnimator.ofFloat(progress, target);
+                animator.setDuration(ModGlassStyle.SWITCH_ANIM_DURATION_MS);
+                animator.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
+                animator.addUpdateListener(a -> {
+                    progress = (float) a.getAnimatedValue();
+                    invalidate();
+                });
+                animator.start();
+            }
+
+            @Override
+            protected void onDraw(@NonNull Canvas canvas) {
+                float w = getWidth();
+                float h = getHeight();
+                if (w <= 0 || h <= 0) return;
+                float r = AndroidUtilities.dpf2(ModGlassStyle.SWITCH_RADIUS_DP);
+                trackRect.set(0, 0, w, h);
+                trackPaint.setColor(androidx.core.graphics.ColorUtils.blendARGB(
+                        ModGlassStyle.SWITCH_OFF_COLOR, ModGlassStyle.SWITCH_ON_COLOR, progress));
+                canvas.drawRoundRect(trackRect, r, r, trackPaint);
+
+                float inset = dp(ModGlassStyle.SWITCH_THUMB_INSET_DP);
+                float thumbSize = dp(ModGlassStyle.SWITCH_THUMB_SIZE_DP);
+                float thumbR = thumbSize * 0.5f;
+                float travel = Math.max(0f, w - inset * 2f - thumbSize);
+                float cx = inset + thumbR + travel * progress;
+                float cy = h * 0.5f;
+                canvas.drawCircle(cx, cy, thumbR, thumbPaint);
+            }
         }
 
         public static class Background extends Drawable {
@@ -1608,6 +1827,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
             private LinearGradient gradient, strokeGradient;
             private final Matrix matrix = new Matrix();
+            private float cornerRadiusDp = 10f;
 
             public Background() {
                 strokePaint.setStyle(Paint.Style.STROKE);
@@ -1615,8 +1835,12 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 strokePaint.setShader(strokeGradient);
             }
 
+            public void setCornerRadiusDp(float dpValue) {
+                this.cornerRadiusDp = dpValue;
+            }
+
             public void setColor(int topColor, int bottomColor) {
-                gradient = new LinearGradient(0, 0, 0, dp(28), new int[] { topColor, bottomColor }, new float[] { 0, 1 }, Shader.TileMode.CLAMP);
+                gradient = new LinearGradient(0, 0, 0, dp(30), new int[] { topColor, bottomColor }, new float[] { 0, 1 }, Shader.TileMode.CLAMP);
                 paint.setShader(gradient);
             }
 
@@ -1627,7 +1851,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
 
             @Override
             public void draw(@NonNull Canvas canvas) {
-                final float r = dp(10);
+                final float r = AndroidUtilities.dpf2(cornerRadiusDp);
                 AndroidUtilities.rectTmp.set(getBounds());
                 matrix.reset();
                 matrix.postTranslate(AndroidUtilities.rectTmp.left, AndroidUtilities.rectTmp.top);
@@ -1669,15 +1893,17 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 cell.glassStyle = item.accent;
                 cell.glassLightText = item.accent && item.checked;
                 cell.glassDivider = item.accent && divider;
+                cell.isSwitchRow = item.id == 104;
                 cell.valueView.setMaxWidth(item.accent ? dp(110) : cell.originalValueMaxWidth);
                 cell.valueView.setSingleLine(item.accent);
                 cell.valueView.setEllipsize(item.accent ? TextUtils.TruncateAt.END : null);
-                cell.setPadding(item.accent && LocaleController.isRTL ? dp(12) : 0, 0,
-                        item.accent && !LocaleController.isRTL ? dp(12) : 0, 0);
-                ((SettingCell) view).set(
+                if (cell.isSwitchRow) {
+                    cell.setSwitchChecked(ModConfig.glassEnabled, false);
+                }
+                cell.set(
                     iconColorTop, iconColorBottom, item.iconResId,
                     item.text,
-                    item.accent ? null : item.subtext,
+                    cell.isSwitchRow || !item.accent ? item.subtext : null,
                     item.textValue
                 );
             }
@@ -1710,7 +1936,6 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             }
         }
     }
-
     public static class SuggestionCell extends LinearLayout implements Theme.Colorable {
 
         private final Theme.ResourcesProvider resourcesProvider;

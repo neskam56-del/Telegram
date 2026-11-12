@@ -176,14 +176,32 @@ public class GhostConfig {
         if (!hidePhoneNumber) {
             return formatted;
         }
-        // Маскируем номер: оставляем код страны (+7/...) и последние 2 цифры
+        // Маскируем номер в формате "+1 548 *** ** 52": код страны + префикс оператора + последние 2 цифры
         String clean = rawPhone.replaceAll("[^0-9]", "");
         if (clean.length() <= 4) {
             return "***";
         }
         String last2 = clean.substring(clean.length() - 2);
-        String prefix = clean.substring(0, Math.min(1, clean.length() - 4));
-        return "+" + prefix + " *** *** ** " + last2;
+        String ccDigits = "";
+        if (formatted != null && formatted.startsWith("+")) {
+            int sp = formatted.indexOf(' ');
+            if (sp > 1) {
+                ccDigits = formatted.substring(1, sp).replaceAll("[^0-9]", "");
+            }
+        }
+        if (ccDigits.isEmpty() || ccDigits.length() >= clean.length() - 2) {
+            int ccLen = clean.length() >= 11 ? Math.min(3, clean.length() - 10) : 1;
+            ccDigits = clean.substring(0, Math.max(1, ccLen));
+        }
+        String rest = clean.substring(ccDigits.length());
+        if (rest.length() >= 8) {
+            int areaLen = Math.min(3, rest.length() - 7);
+            String area = rest.substring(0, areaLen);
+            return "+" + ccDigits + " " + area + " *** ** " + last2;
+        } else if (rest.length() >= 5) {
+            return "+" + ccDigits + " *** ** " + last2;
+        }
+        return "+" + ccDigits + " *** " + last2;
     }
 
     public static String getSpoofedModel(String defaultModel) {

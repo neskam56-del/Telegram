@@ -20,6 +20,7 @@ import androidx.dynamicanimation.animation.SpringForce;
 
 import android.util.Log;
 
+import org.telegram.ghostgram.ui.ModGlassStyle;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AnimatedLinearLayout;
@@ -38,10 +39,17 @@ public class MainTabsLayout extends AnimatedLinearLayout {
 
     private final Theme.ResourcesProvider resourcesProvider;
     private boolean modGlass;
+    private boolean modGlassActive;
 
     public void setModGlass(boolean enabled) {
-        modGlass = enabled;
+        setModStyle(enabled, enabled);
+    }
+
+    public void setModStyle(boolean styled, boolean glassActive) {
+        modGlass = styled;
+        modGlassActive = glassActive;
         invalidate();
+        requestLayout();
     }
 
     public MainTabsLayout(Context context, Theme.ResourcesProvider resourcesProvider) {
@@ -316,7 +324,7 @@ public class MainTabsLayout extends AnimatedLinearLayout {
     @Override
     protected void dispatchDraw(@NonNull Canvas canvas) {
         if (drawCustomSelector) {
-            if (modGlass) selectorPaint.setColor(0x2EFFFFFF);
+            if (modGlass) selectorPaint.setColor(modGlassActive ? ModGlassStyle.TAB_GLASS_ACTIVE_BG : ModGlassStyle.TAB_FLAT_ACTIVE_BG);
             final float x = animatedLongSelectedViewCenterX + animatedLongSelectedViewOffsetX;
             final float sWidth = getInterpolatedWidthByX(x, this);
             final float sHeight = getHeight() - getPaddingTop() - getPaddingBottom();

@@ -57,6 +57,7 @@ import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.UserObject;
 import org.telegram.ghostgram.ModConfig;
 import org.telegram.ghostgram.ui.ModGlassBackground;
+import org.telegram.ghostgram.ui.ModGlassStyle;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -132,6 +133,9 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     private boolean modGlassActive;
     private boolean pendingModSearch;
     private final RectF modPanelBounds = new RectF();
+    private final ModConfig.Listener modConfigListener = () -> {
+        if (tabsView != null) applyModTabs();
+    };
 
     public MainTabsActivity() {
         super();
@@ -328,14 +332,15 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
     @Override
     public View createView(Context context) {
         if (modTabsGlass != null) modTabsGlass.release();
+        ModConfig.addListener(modConfigListener);
         modGlassActive = ModConfig.isGlassActive();
         super.createView(context);
         tabletLayout = false;
 
         tabsView = new MainTabsLayout(context, resourceProvider);
         tabsView.setClipChildren(false);
-        tabsView.setPadding(dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(DialogsActivity.MAIN_TABS_MARGIN + 4), dp(DialogsActivity.MAIN_TABS_MARGIN + 4));
-        tabsView.setMaxWidth(dp(328 + DialogsActivity.MAIN_TABS_MARGIN * 2));
+        tabsView.setPadding(dp(ModGlassStyle.BAR_PADDING_DP), dp(ModGlassStyle.BAR_PADDING_DP), dp(ModGlassStyle.BAR_PADDING_DP), dp(ModGlassStyle.BAR_PADDING_DP));
+        tabsView.setMaxWidth(Integer.MAX_VALUE);
 
         tabs = new GlassTabView[5];
         tabs[INDEX_CHATS] = GlassTabView.createMainTab(context, resourceProvider, GlassTabView.TabAnimation.CHATS, R.string.MainTabsChats);
@@ -409,38 +414,50 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
         tabsViewWrapper = new FrameLayout(context) {
             @Override
+            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                int w = MeasureSpec.getSize(widthMeasureSpec);
+                int h = dp(ModGlassStyle.BAR_HEIGHT_DP + ModGlassStyle.BAR_BOTTOM_MARGIN_DP);
+                int pillW = Math.max(0, w - getPaddingLeft() - getPaddingRight() - dp(ModGlassStyle.BAR_LEFT_MARGIN_DP + ModGlassStyle.BAR_RIGHT_MARGIN_DP));
+                int pillH = dp(ModGlassStyle.BAR_HEIGHT_DP);
+                tabsView.measure(MeasureSpec.makeMeasureSpec(pillW, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(pillH, MeasureSpec.EXACTLY));
+                int searchSize = dp(ModGlassStyle.SEARCH_BTN_SIZE_DP);
+                modSearchButton.measure(MeasureSpec.makeMeasureSpec(searchSize, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(searchSize, MeasureSpec.EXACTLY));
+                setMeasuredDimension(w, h + getPaddingTop() + getPaddingBottom());
+            }
+
+            @Override
             protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
-                super.onLayout(changed, left, top, right, bottom);
-                if (modGlassActive) {
-                    int available = getWidth() - getPaddingLeft() - getPaddingRight();
-                    int groupWidth = tabsView.getMeasuredWidth() + dp(64);
-                    int x = getPaddingLeft() + (available - groupWidth) / 2;
-                    int y = getHeight() - getPaddingBottom() - tabsView.getMeasuredHeight();
-                    tabsView.layout(x, y, x + tabsView.getMeasuredWidth(), y + tabsView.getMeasuredHeight());
-                    int searchX = x + tabsView.getMeasuredWidth() + dp(8);
-                    int searchY = y + (tabsView.getMeasuredHeight() - dp(56)) / 2;
-                    modSearchButton.layout(searchX, searchY, searchX + dp(56), searchY + dp(56));
-                }
+                int pillLeft = getPaddingLeft() + dp(ModGlassStyle.BAR_LEFT_MARGIN_DP);
+                int pillRight = getWidth() - getPaddingRight() - dp(ModGlassStyle.BAR_RIGHT_MARGIN_DP);
+                int pillBottom = getHeight() - getPaddingBottom() - dp(ModGlassStyle.BAR_BOTTOM_MARGIN_DP);
+                int pillTop = pillBottom - dp(ModGlassStyle.BAR_HEIGHT_DP);
+                tabsView.layout(pillLeft, pillTop, Math.max(pillLeft, pillRight), pillBottom);
+
+                int searchSize = dp(ModGlassStyle.SEARCH_BTN_SIZE_DP);
+                int searchRight = getWidth() - getPaddingRight() - dp(ModGlassStyle.SEARCH_BTN_RIGHT_MARGIN_DP);
+                int searchLeft = searchRight - searchSize;
+                int searchBottom = getHeight() - getPaddingBottom() - dp(ModGlassStyle.SEARCH_BTN_BOTTOM_MARGIN_DP);
+                int searchTop = searchBottom - searchSize;
+                modSearchButton.layout(searchLeft, searchTop, searchRight, searchBottom);
             }
 
             @Override
             protected void dispatchDraw(@NonNull Canvas canvas) {
-                if (modGlassActive && modTabsGlass != null) {
-                    modPanelBounds.set(tabsView.getLeft() + dp(DialogsActivity.MAIN_TABS_MARGIN),
-                            tabsView.getTop() + dp(DialogsActivity.MAIN_TABS_MARGIN),
-                            tabsView.getRight() - dp(DialogsActivity.MAIN_TABS_MARGIN),
-                            tabsView.getBottom() - dp(DialogsActivity.MAIN_TABS_MARGIN));
-                    modTabsGlass.draw(canvas, modPanelBounds, dp(28), dp(28), tabsView.getAlpha(), contentView);
-                    modPanelBounds.set(modSearchButton.getLeft(), modSearchButton.getTop(),
-                            modSearchButton.getRight(), modSearchButton.getBottom());
-                    modTabsGlass.draw(canvas, modPanelBounds, dp(28), dp(28), modSearchButton.getAlpha(), contentView);
+                if (modTabsGlass != null) {
+                    float pillR = dp(ModGlassStyle.BAR_RADIUS_DP);
+                    modPanelBounds.set(tabsView.getLeft(), tabsView.getTop(), tabsView.getRight(), tabsView.getBottom());
+                    modTabsGlass.draw(canvas, modPanelBounds, pillR, pillR, tabsView.getAlpha(), contentView);
+
+                    float searchR = dp(ModGlassStyle.SEARCH_BTN_SIZE_DP * 0.5f);
+                    modPanelBounds.set(modSearchButton.getLeft(), modSearchButton.getTop(), modSearchButton.getRight(), modSearchButton.getBottom());
+                    modTabsGlass.draw(canvas, modPanelBounds, searchR, searchR, modSearchButton.getAlpha(), contentView);
                 }
                 super.dispatchDraw(canvas);
             }
         };
-        tabsViewWrapper.addView(tabsView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
+        tabsViewWrapper.addView(tabsView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, ModGlassStyle.BAR_HEIGHT_DP, Gravity.BOTTOM | Gravity.LEFT));
         modSearchButton = new ImageView(context);
-        modSearchButton.setImageResource(R.drawable.outline_header_search);
+        modSearchButton.setImageDrawable(ModGlassStyle.createGlyphDrawable(ModGlassStyle.GLYPH_SEARCH, ModGlassStyle.SEARCH_ICON_SIZE_DP, 0xFFFFFFFF));
         modSearchButton.setScaleType(ImageView.ScaleType.CENTER);
         modSearchButton.setContentDescription(getString(R.string.Search));
         modSearchButton.setBackground(Theme.createSelectorDrawable(0x22FFFFFF, Theme.RIPPLE_MASK_CIRCLE_AUTO));
@@ -454,7 +471,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
                 viewPager.scrollToPosition(POSITION_CHATS);
             }
         });
-        tabsViewWrapper.addView(modSearchButton, LayoutHelper.createFrame(56, 56, Gravity.BOTTOM | Gravity.RIGHT));
+        tabsViewWrapper.addView(modSearchButton, LayoutHelper.createFrame(ModGlassStyle.SEARCH_BTN_SIZE_DP, ModGlassStyle.SEARCH_BTN_SIZE_DP, Gravity.BOTTOM | Gravity.RIGHT));
         tabsViewWrapper.setClipToPadding(false);
         contentView.addView(tabsViewWrapper, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
         modTabsGlass = new ModGlassBackground(tabsViewWrapper);
@@ -484,25 +501,19 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         if (tabsView == null || modSearchButton == null) return;
         boolean active = ModConfig.isGlassActive();
         modGlassActive = active;
-        // Настройки всегда третьи в режиме мода; сохранённый выбор вкладки звонков не меняем.
         FragmentState state = fragmentsArr.get(POSITION_CALLS_OR_SETTINGS);
-        boolean calls = !active && getUserConfig().showCallsTab;
-        if (state != null && (state.fragment instanceof CallLogActivity) != calls) {
+        if (state != null && state.fragment instanceof CallLogActivity) {
             dropFragmentAtPosition(POSITION_CALLS_OR_SETTINGS);
             dropCallsFragmentAfterPageScroll = false;
             viewPager.rebuild(false);
         }
-        checkUi_callTabVisible(getUserConfig().showCallsTab, false);
-        tabsView.setBackground(active ? null : tabsViewBackground);
-        tabsView.setModGlass(active);
-        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) tabsView.getLayoutParams();
-        lp.leftMargin = active ? dp(12) : 0;
-        lp.rightMargin = active ? dp(76) : 0;
-        tabsView.setLayoutParams(lp);
-        modSearchButton.setVisibility(active ? View.VISIBLE : View.GONE);
-        boolean light = active && ModConfig.wallpaperMode != ModConfig.WP_NONE;
-        modSearchButton.setColorFilter(light ? 0xFFFFFFFF : getThemedColor(Theme.key_glass_tabSelected));
-        for (GlassTabView tab : tabs) tab.setModGlass(active, light);
+        checkUi_callTabVisible(false, false);
+        tabsView.setBackground(null);
+        tabsView.setModStyle(true, active);
+        modSearchButton.setVisibility(View.VISIBLE);
+        modSearchButton.clearColorFilter();
+        for (GlassTabView tab : tabs) tab.setModStyle(true, active);
+        if (modTabsGlass != null) modTabsGlass.invalidate();
         tabsViewWrapper.invalidate();
         checkUi_tabsPosition();
         checkUi_fadeView();
@@ -1152,6 +1163,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
 
     @Override
     public void onFragmentDestroy() {
+        ModConfig.removeListener(modConfigListener);
         if (modTabsGlass != null) {
             modTabsGlass.release();
             modTabsGlass = null;

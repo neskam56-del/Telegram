@@ -11,7 +11,8 @@ import android.graphics.RectF;
 import android.graphics.RenderEffect;
 import android.graphics.RenderNode;
 import android.graphics.Shader;
-import android.graphics.LinearGradient;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.drawable.Drawable;
 import android.hardware.HardwareBuffer;
 import android.media.Image;
@@ -31,7 +32,7 @@ import org.telegram.ui.ActionBar.Theme;
 /** Стекло показывает только обои: текст и соседние строки не попадают в размытие. */
 public final class ModGlassBackground implements Drawable.Callback {
     private final View owner;
-    private final Drawable wallpaper = ModWallpaperManager.createDrawable();
+    private final Drawable wallpaper = ModWallpaperManager.createDrawable(false);
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint shine = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -49,9 +50,7 @@ public final class ModGlassBackground implements Drawable.Callback {
         this.owner = owner;
         wallpaper.setCallback(this);
         border.setStyle(Paint.Style.STROKE);
-        border.setStrokeWidth(Math.max(0.5f, AndroidUtilities.dpf2(0.5f)));
-        shine.setShader(new LinearGradient(0, 0, 0, AndroidUtilities.dp(26),
-                0x20FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP));
+        border.setStrokeWidth(Math.max(1f, AndroidUtilities.dpf2(ModGlassStyle.GLASS_BORDER_WIDTH_DP)));
     }
 
     public void draw(Canvas canvas, RectF bounds, float topRadius, float bottomRadius,
@@ -67,6 +66,14 @@ public final class ModGlassBackground implements Drawable.Callback {
         }
         path.rewind();
         path.addRoundRect(rect, radii, Path.Direction.CW);
+        if (!ModConfig.isGlassActive()) {
+            // Flat: solid fill + thin border, no blur, no highlight.
+            paint.setColor(Theme.multAlpha(ModGlassStyle.FLAT_FILL_COLOR, alpha));
+            canvas.drawPath(path, paint);
+            border.setColor(Theme.multAlpha(ModGlassStyle.FLAT_BORDER_COLOR, alpha));
+            canvas.drawPath(path, border);
+            return;
+        }
         canvas.save();
         canvas.clipPath(path);
         if (ModConfig.isBlurSupported() && ModConfig.glassBlur > 0) {
@@ -89,11 +96,12 @@ public final class ModGlassBackground implements Drawable.Callback {
         paint.setColor(0xFFFFFFFF);
         paint.setAlpha(Math.round(255 * ModConfig.glassOpacity / 100f * alpha));
         canvas.drawPath(path, paint);
-        shine.setAlpha(Math.round(255 * alpha));
-        canvas.translate(0, rect.top);
-        canvas.drawRect(rect.left, 0, rect.right, Math.min(rect.height(), AndroidUtilities.dp(26)), shine);
+        // 1dp inner top highlight
+        shine.setColor(Theme.multAlpha(ModGlassStyle.GLASS_TOP_HIGHLIGHT_COLOR, alpha));
+        canvas.drawRect(rect.left, rect.top, rect.right,
+                rect.top + Math.max(1f, AndroidUtilities.dpf2(ModGlassStyle.GLASS_TOP_HIGHLIGHT_HEIGHT_DP)), shine);
         canvas.restore();
-        border.setColor(Theme.multAlpha(0x55FFFFFF, alpha));
+        border.setColor(Theme.multAlpha(ModGlassStyle.GLASS_BORDER_COLOR, alpha));
         canvas.drawPath(path, border);
     }
 
@@ -106,7 +114,7 @@ public final class ModGlassBackground implements Drawable.Callback {
         dirty = false;
         key = nextKey;
         final int token = ++generation;
-        final float radius = AndroidUtilities.dp(32) * ModConfig.glassBlur / 100f / 3f;
+        final float radius = AndroidUtilities.dpf2(ModGlassStyle.GLASS_BLUR_DP) * (ModConfig.glassBlur / 50f) / 3f;
         // Снимок маленький; декодирование картинки уже выполняет ModWallpaperManager в фоне.
         owner.post(() -> {
             if (released || token != generation) return;
@@ -173,7 +181,10 @@ public final class ModGlassBackground implements Drawable.Callback {
             RenderNode node = new RenderNode("ModWallpaperBlur");
             try {
                 node.setPosition(0, 0, source.getWidth(), source.getHeight());
-                node.setRenderEffect(RenderEffect.createBlurEffect(Math.max(0.1f, radius), Math.max(0.1f, radius), Shader.TileMode.CLAMP));
+                ColorMatrix sat = new ColorMatrix();
+                sat.setSaturation(ModGlassStyle.GLASS_SATURATION);
+                RenderEffect blurEffect = RenderEffect.createBlurEffect(Math.max(0.1f, radius), Math.max(0.1f, radius), Shader.TileMode.CLAMP);
+                node.setRenderEffect(RenderEffect.createColorFilterEffect(new ColorMatrixColorFilter(sat), blurEffect));
                 Canvas recording = node.beginRecording();
                 recording.drawBitmap(source, 0, 0, null);
                 node.endRecording();

@@ -26,6 +26,7 @@ import androidx.annotation.StringRes;
 import androidx.core.graphics.ColorUtils;
 import androidx.core.math.MathUtils;
 
+import org.telegram.ghostgram.ui.ModGlassStyle;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ContactsController;
 import org.telegram.messenger.DocumentObject;
@@ -72,12 +73,20 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
     private int colorDefault;
     private boolean usePremiumCounter;
     private boolean modGlass;
-    private boolean modLightContent;
+    private boolean modGlassActive;
     private final Paint modSelectorBorder = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     public void setModGlass(boolean enabled, boolean lightContent) {
-        modGlass = enabled;
-        modLightContent = lightContent;
+        setModStyle(enabled, enabled);
+    }
+
+    public void setModStyle(boolean styled, boolean glassActive) {
+        modGlass = styled;
+        modGlassActive = glassActive;
+        if (styled) {
+            textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, ModGlassStyle.TAB_LABEL_SP);
+            counter.setTextSize(dpf2(ModGlassStyle.BADGE_TEXT_SP));
+        }
         updateColorsLottie();
     }
 
@@ -223,7 +232,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
                 premiumStarDrawable.setBounds(x, y, x + dp(14), y + dp(14));
                 premiumStarDrawable.draw(canvas);
             } else {
-                paintCounterBackground.setColor(ColorUtils.blendARGB(Theme.getColor(Theme.key_telegram_color), Theme.getColor(Theme.key_fill_RedNormal), isHasCounterErrorAnimator.getFloatValue()));
+                paintCounterBackground.setColor(modGlass ? ModGlassStyle.BADGE_BG_COLOR : ColorUtils.blendARGB(Theme.getColor(Theme.key_telegram_color), Theme.getColor(Theme.key_fill_RedNormal), isHasCounterErrorAnimator.getFloatValue()));
                 canvas.drawRoundRect(tmpRectF, rInner, rInner, paintCounterBackground);
                 counter.setBounds(tmpRectF);
                 counter.draw(canvas);
@@ -305,9 +314,9 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Fac
         colorDefault = Theme.getColor(Theme.key_glass_tabUnselected, resourcesProvider);
         colorSelected = Theme.getColor(Theme.key_glass_tabSelected, resourcesProvider);
         colorSelectedText = Theme.getColor(Theme.key_glass_tabSelectedText, resourcesProvider);
-        if (modGlass && modLightContent) {
-            colorDefault = 0xCCFFFFFF;
-            colorSelected = colorSelectedText = Color.WHITE;
+        if (modGlass) {
+            colorDefault = ModGlassStyle.TAB_INACTIVE_FG;
+            colorSelected = colorSelectedText = modGlassActive ? ModGlassStyle.TAB_GLASS_ACTIVE_FG : ModGlassStyle.TAB_FLAT_ACTIVE_FG;
         }
         applyColors();
         invalidate();

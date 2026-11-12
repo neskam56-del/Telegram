@@ -5,24 +5,37 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.PowerManager;
 
+import org.telegram.ghostgram.ui.ModGlassStyle;
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LiteMode;
+
+import java.util.concurrent.CopyOnWriteArrayList;
+
 /**
  * ModConfig — настройки визуальной части мода (Liquid Glass, обои).
- * Хранится в отдельном файле SharedPreferences, чтобы не смешиваться с GhostConfig.
+ * Хранится в отдельном файле SharedPreferences, чтобы не смешиваться с GhostConfig,
+ * и синхронизируется с нативным LiteMode.FLAG_LIQUID_GLASS.
  */
 public class ModConfig {
+
+    public interface Listener {
+        void onModConfigChanged();
+    }
 
     private static final String PREFS_NAME = "ghostgram_mod_ui";
 
     private static SharedPreferences prefs;
     private static Context appContext;
+    private static final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
+    private static boolean liteModeListenerRegistered;
 
     // ---- Liquid Glass ----
-    /** Главный переключатель стеклянных панелей. По умолчанию выключен: интерфейс как обычно. */
-    public static boolean glassEnabled = false;
-    /** Сила размытия под панелями, 0..100. */
-    public static int glassBlur = 50;
-    /** Прозрачность белой заливки панели в процентах, 4..30 (по ТЗ около 8-12). */
-    public static int glassOpacity = 10;
+    /** Главный переключатель стеклянных панелей (синхронизируется с LiteMode.FLAG_LIQUID_GLASS). */
+    public static boolean glassEnabled = true;
+    /** Сила размытия под панелями, 0..100 (50 = ~20dp по спецификации). */
+    public static int glassBlur = ModGlassStyle.GLASS_DEFAULT_BLUR_PERCENT;
+    /** Прозрачность белой заливки панели в процентах, 4..30 (по спецификации 9%). */
+    public static int glassOpacity = ModGlassStyle.GLASS_DEFAULT_OPACITY_PERCENT;
     /** Отключать стекло при включённой экономии батареи. */
     public static boolean glassAutoOffBatterySaver = true;
     /** Отключать стекло на слабых устройствах. */
@@ -34,13 +47,13 @@ public class ModConfig {
     public static final int WP_GRADIENT = 2;
     public static final int WP_IMAGE = 3;
 
-    /** Источник обоев: нет, цвет, градиент или картинка из внутреннего хранилища. */
+    /** Источник обоев: нет (дефолтные градиентные обои), цвет, градиент или картинка. */
     public static int wallpaperMode = WP_NONE;
     public static int wallpaperColor1 = 0xFF1B2A49;
     public static int wallpaperColor2 = 0xFF6A3093;
-    /** Затемнение обоев, 0..100 %. */
+    /** Затемнение кастомных обоев, 0..100 %. */
     public static int wallpaperDim = 30;
-    /** Размытие самих обоев, 0..100. */
+    /** Размытие самих кастомных обоев, 0..100. */
     public static int wallpaperBlur = 0;
 
     public static final int GLASS_OPACITY_MIN = 4;
@@ -56,13 +69,30 @@ public class ModConfig {
         appContext = context.getApplicationContext();
         prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         load();
+        syncLiteModeFlag();
+        if (!liteModeListenerRegistered) {
+            liteModeListenerRegistered = true;
+            try {
+                LiteMode.addOnPowerSaverAppliedListener(applied -> bumpAndNotify());
+            } catch (Throwable ignore) {
+            }
+        }
     }
 
     private static void load() {
         if (prefs == null) return;
-        glassEnabled = prefs.getBoolean("glass_enabled", false);
-        glassBlur = clamp(prefs.getInt("glass_blur", 50), 0, 100);
-        glassOpacity = clamp(prefs.getInt("glass_opacity", 10), GLASS_OPACITY_MIN, GLASS_OPACITY_MAX);
+        boolean defaultGlass = true;
+        if (!prefs.contains("glass_enabled")) {
+            try {
+                if (LiteMode.isEnabledSetting(LiteMode.FLAG_LIQUID_GLASS)) {
+                    defaultGlass = true;
+                }
+            } catch (Throwable ignore) {
+            }
+        }
+        glassEnabled = prefs.getBoolean("glass_enabled", defaultGlass);
+        glassBlur = clamp(prefs.getInt("glass_blur", ModGlassStyle.GLASS_DEFAULT_BLUR_PERCENT), 0, 100);
+        glassOpacity = clamp(prefs.getInt("glass_opacity", ModGlassStyle.GLASS_DEFAULT_OPACITY_PERCENT), GLASS_OPACITY_MIN, GLASS_OPACITY_MAX);
         glassAutoOffBatterySaver = prefs.getBoolean("glass_auto_off_battery", true);
         glassAutoOffLowEnd = prefs.getBoolean("glass_auto_off_low_end", true);
         wallpaperMode = clamp(prefs.getInt("wp_mode", WP_NONE), WP_NONE, WP_IMAGE);
@@ -72,21 +102,61 @@ public class ModConfig {
         wallpaperBlur = clamp(prefs.getInt("wp_blur", 0), 0, 100);
     }
 
+    public static void setGlassEnabled(boolean enabled) {
+        if (glassEnabled == enabled) return;
+        glassEnabled = enabled;
+        save();
+    }
+
     public static void save() {
-        if (prefs == null) return;
-        prefs.edit()
-                .putBoolean("glass_enabled", glassEnabled)
-                .putInt("glass_blur", glassBlur)
-                .putInt("glass_opacity", glassOpacity)
-                .putBoolean("glass_auto_off_battery", glassAutoOffBatterySaver)
-                .putBoolean("glass_auto_off_low_end", glassAutoOffLowEnd)
-                .putInt("wp_mode", wallpaperMode)
-                .putInt("wp_color1", wallpaperColor1)
-                .putInt("wp_color2", wallpaperColor2)
-                .putInt("wp_dim", wallpaperDim)
-                .putInt("wp_blur", wallpaperBlur)
-                .apply();
+        if (prefs != null) {
+            prefs.edit()
+                    .putBoolean("glass_enabled", glassEnabled)
+                    .putInt("glass_blur", glassBlur)
+                    .putInt("glass_opacity", glassOpacity)
+                    .putBoolean("glass_auto_off_battery", glassAutoOffBatterySaver)
+                    .putBoolean("glass_auto_off_low_end", glassAutoOffLowEnd)
+                    .putInt("wp_mode", wallpaperMode)
+                    .putInt("wp_color1", wallpaperColor1)
+                    .putInt("wp_color2", wallpaperColor2)
+                    .putInt("wp_dim", wallpaperDim)
+                    .putInt("wp_blur", wallpaperBlur)
+                    .apply();
+        }
+        syncLiteModeFlag();
+        bumpAndNotify();
+    }
+
+    private static void syncLiteModeFlag() {
+        try {
+            if (LiteMode.isEnabledSetting(LiteMode.FLAG_LIQUID_GLASS) != glassEnabled) {
+                LiteMode.toggleFlag(LiteMode.FLAG_LIQUID_GLASS, glassEnabled);
+            }
+        } catch (Throwable ignore) {
+        }
+    }
+
+    private static void bumpAndNotify() {
         revision++;
+        AndroidUtilities.runOnUIThread(() -> {
+            for (Listener listener : listeners) {
+                if (listener != null) {
+                    listener.onModConfigChanged();
+                }
+            }
+        });
+    }
+
+    public static void addListener(Listener listener) {
+        if (listener != null && !listeners.contains(listener)) {
+            listeners.add(listener);
+        }
+    }
+
+    public static void removeListener(Listener listener) {
+        if (listener != null) {
+            listeners.remove(listener);
+        }
     }
 
     public static int getRevision() {
@@ -110,9 +180,19 @@ public class ModConfig {
     }
 
     private static boolean isBatterySaverOn() {
-        if (appContext == null) return false;
-        PowerManager pm = (PowerManager) appContext.getSystemService(Context.POWER_SERVICE);
-        return pm != null && pm.isPowerSaveMode();
+        if (appContext != null) {
+            PowerManager pm = (PowerManager) appContext.getSystemService(Context.POWER_SERVICE);
+            if (pm != null && pm.isPowerSaveMode()) {
+                return true;
+            }
+        }
+        try {
+            if (LiteMode.isPowerSaverApplied()) {
+                return true;
+            }
+        } catch (Throwable ignore) {
+        }
+        return false;
     }
 
     private static boolean isLowEndDevice() {
