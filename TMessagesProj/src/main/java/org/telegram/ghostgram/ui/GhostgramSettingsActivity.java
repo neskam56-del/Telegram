@@ -75,6 +75,8 @@ public class GhostgramSettingsActivity extends BaseFragment {
 
     // Секция: Кастомизация
     private int customHeaderRow;
+    private int localProfileRow;
+    private int showProfileIdRow;
     private int compactDialogsRow;
     private int hideRecommendationsRow;
     private int customShadowRow;
@@ -138,6 +140,8 @@ public class GhostgramSettingsActivity extends BaseFragment {
 
         // Customization
         customHeaderRow = rowCount++;
+        localProfileRow = rowCount++;
+        showProfileIdRow = rowCount++;
         compactDialogsRow = rowCount++;
         hideRecommendationsRow = rowCount++;
         customShadowRow = rowCount++;
@@ -172,7 +176,10 @@ public class GhostgramSettingsActivity extends BaseFragment {
         listView.setAdapter(listAdapter = new ListAdapter(context));
 
         listView.setOnItemClickListener((view, position, x, y) -> {
-            if (position == voicePresetRow) {
+            if (position == localProfileRow) {
+                presentFragment(new LocalProfileActivity(currentAccount, getUserConfig().getClientUserId()));
+                return;
+            } else if (position == voicePresetRow) {
                 showVoicePresetDialog();
                 return;
             } else if (position == devicePresetRow) {
@@ -229,6 +236,9 @@ public class GhostgramSettingsActivity extends BaseFragment {
             } else if (position == fakeLocationRow) {
                 GhostConfig.fakeLocationEnabled = !GhostConfig.fakeLocationEnabled;
                 cell.setChecked(GhostConfig.fakeLocationEnabled);
+            } else if (position == showProfileIdRow) {
+                GhostConfig.showProfileId = !GhostConfig.showProfileId;
+                cell.setChecked(GhostConfig.showProfileId);
             } else if (position == compactDialogsRow) {
                 GhostConfig.compactDialogs = !GhostConfig.compactDialogs;
                 cell.setChecked(GhostConfig.compactDialogs);
@@ -322,13 +332,13 @@ public class GhostgramSettingsActivity extends BaseFragment {
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             int position = holder.getAdapterPosition();
-            return position == ghostModeMasterRow || position == showGhostButtonRow ||
+            return position == localProfileRow || position == ghostModeMasterRow || position == showGhostButtonRow ||
                    position == hideReadRow || position == hideTypingRow || position == hideOnlineRow ||
                    position == antiDeleteRow || position == allowScreenshotsRow ||
                    position == force120HzRow || position == forwardNoAuthorRow || position == hidePhoneNumberRow ||
                    position == customPhoneRow || position == customPhoneValueRow ||
                    position == voicePresetRow || position == deviceSpoofRow || position == devicePresetRow ||
-                   position == fakeLocationRow || position == compactDialogsRow || position == hideRecommendationsRow;
+                   position == fakeLocationRow || position == showProfileIdRow || position == compactDialogsRow || position == hideRecommendationsRow;
         }
 
         @Override
@@ -341,7 +351,7 @@ public class GhostgramSettingsActivity extends BaseFragment {
                     position == voiceShadowRow || position == deviceShadowRow ||
                     position == locationShadowRow || position == customShadowRow) {
                 return TYPE_SHADOW;
-            } else if (position == voicePresetRow || position == devicePresetRow || position == customPhoneValueRow) {
+            } else if (position == localProfileRow || position == voicePresetRow || position == devicePresetRow || position == customPhoneValueRow) {
                 return TYPE_SETTINGS;
             }
             return TYPE_CHECK;
@@ -395,7 +405,9 @@ public class GhostgramSettingsActivity extends BaseFragment {
                 }
                 case TYPE_SETTINGS: {
                     TextSettingsCell cell = (TextSettingsCell) holder.itemView;
-                    if (position == voicePresetRow) {
+                    if (position == localProfileRow) {
+                        cell.setTextAndValue("Локальные подарки и NFT usernames", "Только у вас", true);
+                    } else if (position == voicePresetRow) {
                         int p = GhostConfig.voiceChangerPreset;
                         String name = p >= 0 && p < VoiceChangerDSP.PRESET_NAMES.length ? VoiceChangerDSP.PRESET_NAMES[p] : "";
                         cell.setTextAndValue("Пресет голоса", name, false);
@@ -496,6 +508,14 @@ public class GhostgramSettingsActivity extends BaseFragment {
                             GhostConfig.fakeLocationEnabled,
                             true,
                             false
+                        );
+                    } else if (position == showProfileIdRow) {
+                        cell.setTextAndValueAndCheck(
+                            "Показывать ID в профиле",
+                            "Отображать Telegram ID в чужих профилях, группах и каналах",
+                            GhostConfig.showProfileId,
+                            true,
+                            true
                         );
                     } else if (position == compactDialogsRow) {
                         cell.setTextAndValueAndCheck(

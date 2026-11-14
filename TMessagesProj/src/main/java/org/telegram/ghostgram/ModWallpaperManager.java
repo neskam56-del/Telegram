@@ -1,19 +1,23 @@
 package org.telegram.ghostgram;
 
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
+import android.net.Uri;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.exifinterface.media.ExifInterface;
 
 import org.telegram.ghostgram.ui.ModGlassStyle;
 import org.telegram.messenger.AndroidUtilities;
@@ -22,6 +26,8 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.Utilities;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 
@@ -46,6 +52,180 @@ public class ModWallpaperManager {
     /** Файл обоев во внутреннем хранилище приложения (его пишет выбор обоев). */
     public static File getWallpaperFile() {
         return new File(ApplicationLoader.applicationContext.getFilesDir(), FILE_NAME);
+    }
+
+    /** Проверяет, сохранён ли пользовательский файл обоев. */
+    public static boolean hasWallpaperImage() {
+        File file = getWallpaperFile();
+        return file.isFile() && file.length() > 0;
+    }
+
+    /** Удаляет сохранённый файл обоев и сбрасывает кэш. */
+    public static void deleteWallpaperFile() {
+        try {
+            File file = getWallpaperFile();
+            if (file.exists()) {
+                file.delete();
+            }
+        } catch (Throwable t) {
+            FileLog.e(t);
+        }
+        releaseCache();
+    }
+
+    /**
+     * Асинхронно декодирует выбранную пользователем картинку из галереи с учётом EXIF-поворота,
+     * сжимает до разумного разрешения экрана и сохраняет во внутренний файл обоев.
+     */
+    public static void saveWallpaperFromUri(@NonNull Context context, @NonNull Uri uri, @Nullable Utilities.Callback<Boolean> onDone) {
+        final Context appCtx = context.getApplicationContext();
+        final int screenMax = Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
+        final int maxSide = Math.max(2560, screenMax * 2);
+
+        Utilities.globalQueue.postRunnable(() -> {
+            boolean ok = false;
+            File tmpFile = new File(ApplicationLoader.applicationContext.getFilesDir(), FILE_NAME + ".tmp");
+            Bitmap decoded = null;
+            try {
+                int orientation = ExifInterface.ORIENTATION_NORMAL;
+                try (InputStream exifStream = appCtx.getContentResolver().openInputStream(uri)) {
+                    if (exifStream != null) {
+                        ExifInterface exif = new ExifInterface(exifStream);
+                        orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+                    }
+                } catch (Throwable ignore) {
+                }
+
+                final BitmapFactory.Options bounds = new BitmapFactory.Options();
+                bounds.inJustDecodeBounds = true;
+                try (InputStream boundsStream = appCtx.getContentResolver().openInputStream(uri)) {
+                    if (boundsStream != null) {
+                        BitmapFactory.decodeStream(boundsStream, null, bounds);
+                    }
+                }
+
+                if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+                    int sample = 1;
+                    int longest = Math.max(bounds.outWidth, bounds.outHeight);
+                    while (longest / (sample * 2) >= maxSide) {
+                        sample *= 2;
+                    }
+                    final BitmapFactory.Options opts = new BitmapFactory.Options();
+                    opts.inSampleSize = sample;
+                    opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
+                    try (InputStream decodeStream = appCtx.getContentResolver().openInputStream(uri)) {
+                        if (decodeStream != null) {
+                            decoded = BitmapFactory.decodeStream(decodeStream, null, opts);
+                        }
+                    }
+                }
+
+                if (decoded != null) {
+                    decoded = applyExifMatrix(decoded, orientation, maxSide);
+                    try (FileOutputStream fos = new FileOutputStream(tmpFile)) {
+                        ok = decoded.compress(Bitmap.CompressFormat.JPEG, 90, fos);
+                        fos.flush();
+                    }
+                    if (ok && tmpFile.length() > 0) {
+                        File dest = getWallpaperFile();
+                        if (dest.exists() && !dest.delete()) {
+                            // Перезапишем поверх, если не удалился
+                        }
+                        if (!tmpFile.renameTo(dest)) {
+                            try (InputStream in = new java.io.FileInputStream(tmpFile);
+                                 FileOutputStream out = new FileOutputStream(dest)) {
+                                byte[] buf = new byte[16384];
+                                int r;
+                                while ((r = in.read(buf)) != -1) {
+                                    out.write(buf, 0, r);
+                                }
+                                out.flush();
+                            }
+                            tmpFile.delete();
+                        }
+                        ok = dest.isFile() && dest.length() > 0;
+                    } else {
+                        ok = false;
+                        tmpFile.delete();
+                    }
+                }
+            } catch (Throwable t) {
+                FileLog.e(t);
+                ok = false;
+                try {
+                    tmpFile.delete();
+                } catch (Throwable ignore) {
+                }
+            } finally {
+                if (decoded != null && !decoded.isRecycled()) {
+                    decoded.recycle();
+                }
+            }
+
+            final boolean success = ok;
+            AndroidUtilities.runOnUIThread(() -> {
+                if (success) {
+                    releaseCache();
+                    ModConfig.wallpaperMode = ModConfig.WP_IMAGE;
+                    ModConfig.save();
+                }
+                if (onDone != null) {
+                    onDone.run(success);
+                }
+            });
+        });
+    }
+
+    private static Bitmap applyExifMatrix(@NonNull Bitmap src, int orientation, int maxSide) {
+        Matrix matrix = new Matrix();
+        switch (orientation) {
+            case ExifInterface.ORIENTATION_FLIP_HORIZONTAL:
+                matrix.setScale(-1f, 1f);
+                break;
+            case ExifInterface.ORIENTATION_ROTATE_180:
+                matrix.setRotate(180f);
+                break;
+            case ExifInterface.ORIENTATION_FLIP_VERTICAL:
+                matrix.setRotate(180f);
+                matrix.postScale(-1f, 1f);
+                break;
+            case ExifInterface.ORIENTATION_TRANSPOSE:
+                matrix.setRotate(90f);
+                matrix.postScale(-1f, 1f);
+                break;
+            case ExifInterface.ORIENTATION_ROTATE_90:
+                matrix.setRotate(90f);
+                break;
+            case ExifInterface.ORIENTATION_TRANSVERSE:
+                matrix.setRotate(-90f);
+                matrix.postScale(-1f, 1f);
+                break;
+            case ExifInterface.ORIENTATION_ROTATE_270:
+                matrix.setRotate(-90f);
+                break;
+            default:
+                break;
+        }
+        int bw = src.getWidth();
+        int bh = src.getHeight();
+        int longest = Math.max(bw, bh);
+        if (longest > maxSide && maxSide > 0) {
+            float scale = maxSide / (float) longest;
+            matrix.postScale(scale, scale);
+        }
+        if (matrix.isIdentity()) {
+            return src;
+        }
+        try {
+            Bitmap transformed = Bitmap.createBitmap(src, 0, 0, bw, bh, matrix, true);
+            if (transformed != src) {
+                src.recycle();
+            }
+            return transformed;
+        } catch (Throwable t) {
+            FileLog.e(t);
+            return src;
+        }
     }
 
     /** Новый Drawable обоев. Сам ничего не держит, кроме настроек и общего кэша. */
@@ -78,6 +258,8 @@ public class ModWallpaperManager {
         }
         final File file = getWallpaperFile();
         if (!file.isFile()) {
+            cached = null;
+            cachedKey = null;
             return null;
         }
         // Длинная сторона цели: экран целиком без размытия, четверть экрана при размытии (быстрее и мягче).
@@ -89,12 +271,14 @@ public class ModWallpaperManager {
         if (key.equals(cachedKey)) {
             return cached;
         }
-        // Без дублей: obtain вызывается на каждом кадре, пока картинка собирается.
+        // Без дублей и мёртвых ссылок: obtain вызывается на каждом кадре, пока картинка собирается.
         boolean already = false;
-        for (int i = 0; i < waiting.size(); i++) {
-            if (waiting.get(i).get() == requester) {
+        for (int i = waiting.size() - 1; i >= 0; i--) {
+            final Drawable d = waiting.get(i).get();
+            if (d == null) {
+                waiting.remove(i);
+            } else if (d == requester) {
                 already = true;
-                break;
             }
         }
         if (!already) {
@@ -146,10 +330,9 @@ public class ModWallpaperManager {
             return; // за время сборки параметры изменились, результат устарел
         }
         buildingKey = null;
-        if (result != null) {
-            cached = result;
-            cachedKey = key;
-        }
+        // Запоминаем ключ даже при null, чтобы повреждённый файл не вызывал бесконечное фоновое декодирование.
+        cached = result;
+        cachedKey = key;
         for (int i = 0; i < waiting.size(); i++) {
             final Drawable drawable = waiting.get(i).get();
             if (drawable != null) {
@@ -215,29 +398,29 @@ public class ModWallpaperManager {
             if (w <= 0 || h <= 0) {
                 return;
             }
-            if (ModConfig.wallpaperMode == ModConfig.WP_NONE) {
-                paint.setShader(null);
-                paint.setColor(ModGlassStyle.BG_BASE_COLOR);
-                paint.setAlpha(alpha);
-                canvas.drawRect(bounds, paint);
-
-                if (ModConfig.isGlassActive()) {
-                    ensureDefaultRadials(bounds, w, h);
-                    radialPaint.setAlpha(alpha);
-                    for (int i = 0; i < defaultRadials.length; i++) {
-                        radialPaint.setShader(defaultRadials[i]);
-                        canvas.drawRect(bounds, radialPaint);
-                    }
-                    if (includeDotGrid) {
-                        dotPaint.setShader(ModGlassStyle.getDotGridShader());
-                        dotPaint.setAlpha(Math.round(255f * ModGlassStyle.DOT_LAYER_ALPHA * (alpha / 255f)));
-                        canvas.drawRect(bounds, dotPaint);
-                    }
-                }
-                return;
-            }
             paint.setAlpha(alpha);
             switch (ModConfig.wallpaperMode) {
+                case ModConfig.WP_NONE:
+                default:
+                    paint.setShader(null);
+                    paint.setColor(ModGlassStyle.BG_BASE_COLOR);
+                    paint.setAlpha(alpha);
+                    canvas.drawRect(bounds, paint);
+
+                    if (ModConfig.isGlassActive()) {
+                        ensureDefaultRadials(bounds, w, h);
+                        radialPaint.setAlpha(alpha);
+                        for (int i = 0; i < defaultRadials.length; i++) {
+                            radialPaint.setShader(defaultRadials[i]);
+                            canvas.drawRect(bounds, radialPaint);
+                        }
+                        if (includeDotGrid) {
+                            dotPaint.setShader(ModGlassStyle.getDotGridShader());
+                            dotPaint.setAlpha(Math.round(255f * ModGlassStyle.DOT_LAYER_ALPHA * (alpha / 255f)));
+                            canvas.drawRect(bounds, dotPaint);
+                        }
+                    }
+                    break;
                 case ModConfig.WP_COLOR:
                     paint.setShader(null);
                     paint.setColor(ModConfig.wallpaperColor1);
@@ -260,7 +443,7 @@ public class ModWallpaperManager {
                     break;
                 case ModConfig.WP_IMAGE: {
                     final Bitmap bitmap = obtain(this);
-                    if (bitmap == null || bitmap.isRecycled()) {
+                    if (bitmap == null || bitmap.isRecycled() || bitmap.getWidth() <= 0 || bitmap.getHeight() <= 0) {
                         // Пока картинка собирается, показываем базовый тёмный цвет.
                         paint.setShader(null);
                         paint.setColor(ModGlassStyle.BG_BASE_COLOR);
@@ -271,11 +454,13 @@ public class ModWallpaperManager {
                         paint.setColor(0xFFFFFFFF);
                         paint.setAlpha(alpha);
                         // center-crop: масштаб по большей стороне, лишнее обрезается
-                        final float scale = Math.max(w / (float) bitmap.getWidth(), h / (float) bitmap.getHeight());
-                        final int srcW = Math.min(bitmap.getWidth(), Math.round(w / scale));
-                        final int srcH = Math.min(bitmap.getHeight(), Math.round(h / scale));
-                        final int left = (bitmap.getWidth() - srcW) / 2;
-                        final int top = (bitmap.getHeight() - srcH) / 2;
+                        final int bw = bitmap.getWidth();
+                        final int bh = bitmap.getHeight();
+                        final float scale = Math.max(w / (float) bw, h / (float) bh);
+                        final int srcW = Math.max(1, Math.min(bw, Math.round(w / scale)));
+                        final int srcH = Math.max(1, Math.min(bh, Math.round(h / scale)));
+                        final int left = (bw - srcW) / 2;
+                        final int top = (bh - srcH) / 2;
                         src.set(left, top, left + srcW, top + srcH);
                         canvas.drawBitmap(bitmap, src, bounds, paint);
                     }

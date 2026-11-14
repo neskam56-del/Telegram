@@ -837,6 +837,7 @@ public class ChatActivity extends BaseFragment implements
     private MessageObject replyingMessageObject;
     private int editingMessageObjectReqId;
     public MessageObject editingMessageObject;
+    private ArrayList<MessageObject> editingMessages;
     private boolean paused = true;
     private boolean pausedOnLastMessage;
     private boolean wasPaused;
@@ -1804,7 +1805,6 @@ public class ChatActivity extends BaseFragment implements
             alreadySelectedMessagesIds.put(selectedMessagesIds[1].keyAt(i), selectedMessagesIds[1].valueAt(i));
         }
         chatListView.startMultiselect(position, false, new RecyclerListView.onMultiSelectionChanged() {
-            boolean limitReached;
             @Override
             public void onSelectionChanged(int position, boolean selected, float x, float y) {
                 int i = position - chatAdapter.messagesStartRow;
@@ -1820,11 +1820,6 @@ public class ChatActivity extends BaseFragment implements
                         return;
                     }
                     if (messageObject.contentType == 0) {
-                        if (selected && selectedMessagesIds[0].size() + selectedMessagesIds[1].size() >= 100) {
-                            limitReached = true;
-                        } else {
-                            limitReached = false;
-                        }
                         RecyclerView.ViewHolder holder = chatListView.findViewHolderForAdapterPosition(position);
                         if (holder != null && holder.itemView instanceof ChatMessageCell) {
                             processRowSelect(holder.itemView, false, x, y);
@@ -1872,7 +1867,7 @@ public class ChatActivity extends BaseFragment implements
 
             @Override
             public boolean limitReached() {
-                return limitReached;
+                return false;
             }
 
             @Override
@@ -2287,6 +2282,7 @@ public class ChatActivity extends BaseFragment implements
                 }
             }
             if (!loading) {
+                editingMessages = null;
                 if (mentionContainer != null) {
                     mentionContainer.getAdapter().setNeedBotContext(true);
                 }
@@ -3940,14 +3936,18 @@ public class ChatActivity extends BaseFragment implements
                     }
                     clearSelectionMode();
                 } else if (id == edit) {
+                    if (!canEditSelectedMessages()) {
+                        return;
+                    }
+                    ArrayList<MessageObject> messagesToEdit = new ArrayList<>();
                     MessageObject messageObject = null;
                     for (int a = 1; a >= 0; a--) {
-                        if (messageObject == null && selectedMessagesIds[a].size() == 1) {
-                            ArrayList<Integer> ids = new ArrayList<>();
-                            for (int b = 0; b < selectedMessagesIds[a].size(); b++) {
-                                ids.add(selectedMessagesIds[a].keyAt(b));
+                        for (int b = 0; b < selectedMessagesIds[a].size(); b++) {
+                            MessageObject selected = selectedMessagesIds[a].valueAt(b);
+                            messagesToEdit.add(selected);
+                            if (messageObject == null || messageObject.isMediaEmpty() && !selected.isMediaEmpty()) {
+                                messageObject = selected;
                             }
-                            messageObject = messagesDict[a].get(ids.get(0));
                         }
                         selectedMessagesIds[a].clear();
                         selectedMessagesCanCopyIds[a].clear();
@@ -3957,7 +3957,7 @@ public class ChatActivity extends BaseFragment implements
                         selectedObject = messageObject;
                         processSelectedOption(OPTION_EDIT_TODO);
                     } else {
-                        startEditingMessageObject(messageObject);
+                        startEditingMessageObject(messageObject, false, messagesToEdit.size() > 1 ? messagesToEdit : null);
                     }
                     hideActionMode();
                     updatePinnedMessageView(true);
@@ -8219,7 +8219,7 @@ public class ChatActivity extends BaseFragment implements
             } else if (fieldPanelShown == 1 && editingMessageObject != null) {
                 if (editingMessageObject.needResendWhenEdit() && !isButtonPress) {
                     showSuggestionOfferForEditMessage(messageSuggestionParams != null ? messageSuggestionParams: MessageSuggestionParams.empty());
-                } else if (editingMessageObject.canEditMedia() && editingMessageObjectReqId == 0) {
+                } else if (!isEditingMultipleMessages() && editingMessageObject.canEditMedia() && editingMessageObjectReqId == 0) {
                     Utilities.Callback<Integer> open = type -> {
                         if (chatAttachAlert == null) {
                             createChatAttachView();
@@ -8377,7 +8377,7 @@ public class ChatActivity extends BaseFragment implements
 
             button.updateColors();
             button.setOnClickListener(v -> {
-                if (editingMessageObject == null || !editingMessageObject.canEditMedia() || editingMessageObjectReqId != 0) {
+                if (isEditingMultipleMessages() || editingMessageObject == null || !editingMessageObject.canEditMedia() || editingMessageObjectReqId != 0) {
                     return;
                 }
                 if (button.isEditButton()) {
@@ -10829,7 +10829,7 @@ public class ChatActivity extends BaseFragment implements
             actionModeViews.add(actionMode.addItemWithWidth(copy, R.drawable.msg_copy, dp(48), LocaleController.getString(R.string.Copy)));
             actionModeViews.add(actionMode.addItemWithWidth(delete, R.drawable.msg_delete, dp(48), LocaleController.getString(R.string.Delete)));
         }
-        actionMode.setItemVisibility(edit, canEditMessagesCount == 1 && selectedMessagesIds[0].size() + selectedMessagesIds[1].size() == 1 ? View.VISIBLE : View.GONE);
+        actionMode.setItemVisibility(edit, canEditSelectedMessages() ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(copy, !isPeerNoForwards() && selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0 ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(star, selectedMessagesCanStarIds[0].size() + selectedMessagesCanStarIds[1].size() != 0 ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(delete, cantDeleteMessagesCount == 0 ? View.VISIBLE : View.GONE);
@@ -15474,7 +15474,7 @@ public class ChatActivity extends BaseFragment implements
                 final boolean mediaEmpty = messageObjectToEdit.isMediaEmpty();
                 chatActivityEnterView.setEditingMessageObject(messageObjectToEdit, getValidGroupedMessage(messageObjectToEdit), !mediaEmpty);
                 chatActivityEnterView.setForceShowSendButton(false, false);
-                final boolean canEditMedia = messageObjectToEdit.canEditMedia();
+                final boolean canEditMedia = !isEditingMultipleMessages() && messageObjectToEdit.canEditMedia();
                 replyCloseImageView.setContentDescription(LocaleController.getString(R.string.AccDescrCancelEdit));
                 if (messageObjectToEdit.needResendWhenEdit()) {
                     messageSuggestionParams = MessageSuggestionParams.of(messageObjectToEdit.messageOwner != null ? messageObjectToEdit.messageOwner.suggested_post : null);
@@ -15526,6 +15526,10 @@ public class ChatActivity extends BaseFragment implements
                             cs = MessageObject.replaceAnimatedEmoji(cs, messageObjectToEdit.messageOwner.entities, replyObjectTextView.getPaint().getFontMetricsInt());
                         }
                         replyObjectTextView.setText(AnimatedEmojiSpan.cloneSpans(cs, -1, replyObjectTextView.getPaint().getFontMetricsInt()));
+                    }
+                    if (isEditingMultipleMessages()) {
+                        replyNameTextView.setText(LocaleController.getString(R.string.EditMessage));
+                        replyObjectTextView.setText(LocaleController.formatPluralString("MessagesSelected", editingMessages.size()));
                     }
                 }
 
@@ -19898,14 +19902,6 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
             } else {
-                if (selectedMessagesIds[0].size() + selectedMessagesIds[1].size() >= 100) {
-                    AndroidUtilities.shakeView(selectedMessagesCountTextView);
-                    Vibrator vibrator = (Vibrator) ApplicationLoader.applicationContext.getSystemService(Context.VIBRATOR_SERVICE);
-                    if (vibrator != null) {
-                        vibrator.vibrate(200);
-                    }
-                    return;
-                }
                 selectedMessagesIds[index].put(messageObject.getId(), messageObject);
                 if (!isReport()) {
                     if ((messageObject.type == MessageObject.TYPE_TEXT || messageObject.isAnimatedEmoji() || messageObject.caption != null) && !(messageObject.messageOwner != null && messageObject.messageOwner.noforwards)) {
@@ -20030,7 +20026,7 @@ public class ChatActivity extends BaseFragment implements
                 if (starItem != null) {
                     starItem.setIcon(hasUnfavedSelected ? R.drawable.msg_fave : R.drawable.msg_unfave);
                 }
-                final int newEditVisibility = canEditMessagesCount == 1 && selectedCount == 1 ? View.VISIBLE : View.GONE;
+                final int newEditVisibility = canEditSelectedMessages() ? View.VISIBLE : View.GONE;
                 if (actionsButtonsLayout != null) {
                     boolean allowChatActions = true;
                     if (bottomChannelButtonsLayout != null && bottomChannelButtonsLayout.getVisibility() == View.VISIBLE && !bottomOverlayChatWaitsReply ||
@@ -20627,7 +20623,7 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private void openEditingMessageInPhotoEditor() {
-        if (editingMessageObject == null || !editingMessageObject.canEditMedia() || editingMessageObjectReqId != 0) {
+        if (isEditingMultipleMessages() || editingMessageObject == null || !editingMessageObject.canEditMedia() || editingMessageObjectReqId != 0) {
             return;
         }
         if (!editingMessageObject.isPhoto() && !editingMessageObject.isVideo()) {
@@ -33999,11 +33995,71 @@ public class ChatActivity extends BaseFragment implements
         return null;
     }
 
+    private boolean canEditSelectedMessages() {
+        int count = selectedMessagesIds[0].size() + selectedMessagesIds[1].size();
+        if (count <= 1) {
+            return count == 1 && canEditMessagesCount == 1;
+        }
+        if (currentEncryptedChat != null || chatActivityEnterView == null || chatActivityEnterView.hasAudioToSend()) {
+            return false;
+        }
+        for (SparseArray<MessageObject> selection : selectedMessagesIds) {
+            for (int i = 0; i < selection.size(); i++) {
+                if (!canBulkEditMessage(selection.valueAt(i))) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private boolean canBulkEditMessage(MessageObject message) {
+        return message != null && message.getDialogId() == dialog_id
+                && message.getId() > 0 && message.canEditMessage(currentChat)
+                && (message.isMediaEmpty() || message.canEditMedia())
+                && !message.isEditing() && !message.needResendWhenEdit()
+                && !message.isTodo() && message.type != MessageObject.TYPE_POLL
+                && message.type != MessageObject.TYPE_STORY && message.type != MessageObject.TYPE_PAID_MEDIA
+                && message.messageOwner.rich_message == null;
+    }
+
+    public boolean isEditingMultipleMessages() {
+        return editingMessages != null && editingMessages.size() > 1;
+    }
+
+    public boolean editSelectedMessages(CharSequence text, ArrayList<TLRPC.MessageEntity> entities, boolean searchLinks) {
+        if (!isEditingMultipleMessages()) {
+            return false;
+        }
+        // Validate the entire selection before sending any edits; permissions may have expired.
+        for (MessageObject message : editingMessages) {
+            if (!canBulkEditMessage(message) || TextUtils.isEmpty(text) && message.isMediaEmpty()) {
+                showDialog(new AlertDialog.Builder(getParentActivity(), themeDelegate)
+                        .setTitle(LocaleController.getString(R.string.AppName))
+                        .setMessage(LocaleController.getString(R.string.EditMessageError))
+                        .setPositiveButton(LocaleController.getString(R.string.OK), null).create());
+                return false;
+            }
+        }
+        for (MessageObject message : editingMessages) {
+            getSendMessagesHelper().editMessage(message, text.toString(), searchLinks, this,
+                    entities == null ? new ArrayList<>() : new ArrayList<>(entities),
+                    message.scheduled ? message.messageOwner.date : 0, message.messageOwner.schedule_repeat_period);
+        }
+        editingMessages = null;
+        return true;
+    }
+
     private void startEditingMessageObject(MessageObject messageObject) {
         startEditingMessageObject(messageObject, false);
     }
 
     private void startEditingMessageObject(MessageObject messageObject, boolean asSuggestion) {
+        startEditingMessageObject(messageObject, asSuggestion, null);
+    }
+
+    private void startEditingMessageObject(MessageObject messageObject, boolean asSuggestion, ArrayList<MessageObject> messagesToEdit) {
+        editingMessages = messagesToEdit;
         if (messageObject == null || getParentActivity() == null) {
             return;
         }

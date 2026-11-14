@@ -45,6 +45,7 @@ public class GhostConfig {
     public static boolean localPremiumEnabled = true;       // Разблокировка платных возможностей (иконки, без рекламы)
     public static boolean compactDialogs = false;           // Компактный список чатов
     public static boolean hideChannelRecommendations = true;// Скрытие рекомендаций каналов
+    public static boolean showProfileId = true;             // Показывать ID в чужом профиле
     public static int dialogAvatarRadius = 26;              // Радиус скругления аватарок
 
     public static boolean deviceSpoofEnabled = false;       // Подмена устройства
@@ -100,6 +101,7 @@ public class GhostConfig {
         localPremiumEnabled = prefs.getBoolean("local_premium_enabled", true);
         compactDialogs = prefs.getBoolean("compact_dialogs", false);
         hideChannelRecommendations = prefs.getBoolean("hide_channel_recommendations", true);
+        showProfileId = prefs.getBoolean("show_profile_id", true);
         dialogAvatarRadius = prefs.getInt("dialog_avatar_radius", 26);
         deviceSpoofEnabled = prefs.getBoolean("device_spoof_enabled", false);
         deviceSpoofIndex = prefs.getInt("device_spoof_index", 0);
@@ -140,6 +142,7 @@ public class GhostConfig {
         editor.putBoolean("local_premium_enabled", localPremiumEnabled);
         editor.putBoolean("compact_dialogs", compactDialogs);
         editor.putBoolean("hide_channel_recommendations", hideChannelRecommendations);
+        editor.putBoolean("show_profile_id", showProfileId);
         editor.putInt("dialog_avatar_radius", dialogAvatarRadius);
         editor.putBoolean("device_spoof_enabled", deviceSpoofEnabled);
         editor.putInt("device_spoof_index", deviceSpoofIndex);

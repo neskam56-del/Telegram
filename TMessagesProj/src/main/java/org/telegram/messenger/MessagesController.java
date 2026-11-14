@@ -9346,6 +9346,22 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void deleteMessages(ArrayList<Integer> messages, ArrayList<Long> randoms, TLRPC.EncryptedChat encryptedChat, long dialogId, boolean forAll, int mode, boolean cacheOnly, long taskId, TLObject taskRequest, int topicId, boolean movedToScheduled, int movedToScheduledMessageId) {
+        if (taskId == 0 && taskRequest == null && messages != null && messages.size() > 100) {
+            // Keep API requests and persisted pending tasks within the normal batch size.
+            if (!cacheOnly && encryptedChat != null && randoms != null && !randoms.isEmpty()) {
+                for (int offset = 0; offset < randoms.size(); offset += 100) {
+                    getSecretChatHelper().sendMessagesDeleteMessage(encryptedChat,
+                            new ArrayList<>(randoms.subList(offset, Math.min(offset + 100, randoms.size()))), null);
+                }
+            }
+            ArrayList<Integer> ids = new ArrayList<>(messages);
+            for (int offset = 0; offset < ids.size(); offset += 100) {
+                deleteMessages(new ArrayList<>(ids.subList(offset, Math.min(offset + 100, ids.size()))),
+                        null, encryptedChat, dialogId, forAll, mode, cacheOnly, 0, null, topicId,
+                        movedToScheduled, movedToScheduledMessageId);
+            }
+            return;
+        }
         final boolean scheduled = mode == ChatActivity.MODE_SCHEDULED;
         final boolean quickReplies = mode == ChatActivity.MODE_QUICK_REPLIES;
         final boolean welcomeMessages = mode == ChatActivity.MODE_WELCOME_MESSAGES;

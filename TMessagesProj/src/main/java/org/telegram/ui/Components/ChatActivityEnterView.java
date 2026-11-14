@@ -7794,6 +7794,12 @@ public class ChatActivityEnterView extends FrameLayout implements
             return;
         }
         ArrayList<TLRPC.MessageEntity> entities = MediaDataController.getInstance(currentAccount).getEntities(message, supportsSendingNewEntities());
+        if (parentFragment != null && parentFragment.isEditingMultipleMessages()) {
+            if (parentFragment.editSelectedMessages(message[0], entities, messageWebPageSearch)) {
+                setEditingMessageObject(null, null, false);
+            }
+            return;
+        }
         if (!TextUtils.equals(message[0], editingMessageObject.messageText) || entities != null && !entities.isEmpty() || !editingMessageObject.messageOwner.entities.isEmpty() || editingMessageObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage) {
             editingMessageObject.editingMessage = message[0];
             editingMessageObject.editingMessageEntities = entities;
@@ -10063,6 +10069,7 @@ public class ChatActivityEnterView extends FrameLayout implements
             }
 
             doneButton.setOnLongClickListener(v -> {
+                if (parentFragment != null && parentFragment.isEditingMultipleMessages()) return false;
                 if (messageObject.isMediaEmpty()) return false;
                 if (messageEditText == null || TextUtils.isEmpty(messageEditText.getTextToUse())) return false;
                 if (groupedMessages != null && (!groupedMessages.hasCaption || groupedMessages.isDocuments)) return false;

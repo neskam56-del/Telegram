@@ -315,6 +315,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
                 }
 
                 private boolean canReorder(TL_stars.SavedStarGift gift) {
+                    if (gift instanceof org.telegram.ghostgram.LocalProfileStore.Gift) return false;
                     if (!reordering) return false;
                     if (list == parent.list) {
                         return gift != null && gift.pinned_to_top;
@@ -660,9 +661,18 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
         public void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
             if (list == null)
                 return;
+            final ArrayList<org.telegram.ghostgram.LocalProfileStore.Gift> localGifts = !isCollection && !list.hasFilters()
+                ? org.telegram.ghostgram.LocalProfileStore.gifts(currentAccount, parent.dialogId) : new ArrayList<>();
+            if (!localGifts.isEmpty()) {
+                items.add(UItem.asHeader("Локальные подарки (видны только вам)"));
+                for (org.telegram.ghostgram.LocalProfileStore.Gift gift : localGifts) {
+                    items.add(GiftSheet.GiftCell.Factory.asStarGift(0, gift, true));
+                }
+                items.add(UItem.asHeader("Подарки Telegram"));
+            }
             if (list.hasFilters() && list.gifts.size() <= 0 && list.endReached && !list.loading)
                 return;
-            final int spanCount = Math.max(1, list == null || list.totalCount == 0 ? 3 : Math.min(3, list.totalCount));
+            final int spanCount = localGifts.isEmpty() ? Math.max(1, list.totalCount == 0 ? 3 : Math.min(3, list.totalCount)) : 3;
             if (list != null) {
                 int spanCountLeft = 3;
                 for (TL_stars.SavedStarGift userGift : list.gifts) {
@@ -713,6 +723,11 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
         }
 
         public void onItemClick(UItem item, View view, int position, float x, float y) {
+            if (item.object instanceof org.telegram.ghostgram.LocalProfileStore.Gift) {
+                org.telegram.ghostgram.ui.LocalProfileActivity.showGiftActions(parent.fragment, parent.dialogId,
+                    (org.telegram.ghostgram.LocalProfileStore.Gift) item.object, () -> update(true));
+                return;
+            }
             if (list == null) return;
             if (item.object instanceof TL_stars.SavedStarGift) {
                 final TL_stars.SavedStarGift userGift = (TL_stars.SavedStarGift) item.object;
@@ -769,6 +784,10 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
         }
 
         public boolean onItemLongPress(UItem item, View view, int position, float x, float y) {
+            if (item.object instanceof org.telegram.ghostgram.LocalProfileStore.Gift) {
+                onItemClick(item, view, position, x, y);
+                return true;
+            }
             if (list == null) return false;
             if (view instanceof GiftSheet.GiftCell && item.object instanceof TL_stars.SavedStarGift) {
                 final GiftSheet.GiftCell cell = (GiftSheet.GiftCell) view;
@@ -1758,17 +1777,19 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
 
     public int getGiftsCount() {
         final Page page = getCurrentPage();
+        final int localCount = (page == null || page.list == list) && list != null && !list.hasFilters()
+            ? org.telegram.ghostgram.LocalProfileStore.count(currentAccount, dialogId) : 0;
         if (page == null || page.list == list) {
-            if (list != null && list.totalCount > 0) return list.totalCount;
+            if (list != null && list.totalCount > 0) return list.totalCount + localCount;
         } else {
             if (page.list != null && page.list.totalCount > 0) return page.list.totalCount;
         }
         if (dialogId >= 0) {
             final TLRPC.UserFull userFull = MessagesController.getInstance(currentAccount).getUserFull(dialogId);
-            return userFull != null ? userFull.stargifts_count : 0;
+            return (userFull != null ? userFull.stargifts_count : 0) + localCount;
         } else {
             final TLRPC.ChatFull chatFull = MessagesController.getInstance(currentAccount).getChatFull(-dialogId);
-            return chatFull != null ? chatFull.stargifts_count : 0;
+            return (chatFull != null ? chatFull.stargifts_count : 0) + localCount;
         }
     }
 

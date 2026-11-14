@@ -56,6 +56,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.collection.LongSparseArray;
+import androidx.core.graphics.ColorUtils;
 import androidx.core.graphics.Insets;
 import androidx.core.math.MathUtils;
 import androidx.core.view.ViewCompat;
@@ -133,6 +134,7 @@ import org.telegram.ui.Components.TextHelper;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalRecyclerView;
+import org.telegram.ui.Components.blur3.utils.Blur3Utils;
 import org.telegram.utils.glass.source.GlassSourceRenderNode;
 import org.telegram.ui.Components.voip.VoIPHelper;
 import org.telegram.ui.Stars.StarsController;
@@ -206,7 +208,6 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     private boolean callsCountRequested;
     public boolean hasMainTabs;
 
-    private View navigationBar;
     private View actionBarFadeView;
 
     private int versionViewPressCount = 0;
@@ -238,7 +239,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             hasMainTabs = arguments.getBoolean("hasMainTabs", false);
         }
 
-        additionNavigationBarHeight = dp(ModGlassStyle.CONTENT_BOTTOM_PAD_DP);
+        additionNavigationBarHeight = hasMainTabs ? dp(ModGlassStyle.CONTENT_BOTTOM_PAD_DP) : dp(16);
         return super.onFragmentCreate();
     }
 
@@ -256,31 +257,118 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
 
     /** Обои мода (шаг 2 Liquid Glass): сам Drawable лёгкий, картинку берёт из общего кэша ModWallpaperManager. */
     private Drawable modWallpaper;
-    private boolean modWallpaperAttached;
+    private final Drawable.Callback modWallpaperCallback = new Drawable.Callback() {
+        @Override
+        public void invalidateDrawable(@NonNull Drawable who) {
+            if (contentView != null) {
+                contentView.invalidateBackground();
+                glassEngine.invalidate();
+            }
+        }
 
-    /** Включает или обновляет обои мода. Если обои не заданы, фон остаётся прежним. */
+        @Override
+        public void scheduleDrawable(@NonNull Drawable who, @NonNull Runnable what, long when) {
+            if (contentView != null) {
+                contentView.scheduleDrawable(who, what, when);
+            }
+        }
+
+        @Override
+        public void unscheduleDrawable(@NonNull Drawable who, @NonNull Runnable what) {
+            if (contentView != null) {
+                contentView.unscheduleDrawable(who, what);
+            }
+        }
+    };
+
+    private int getWallpaperEdgeColor(boolean topEdge) {
+        int base;
+        switch (ModConfig.wallpaperMode) {
+            case ModConfig.WP_COLOR:
+                base = ModConfig.wallpaperColor1;
+                break;
+            case ModConfig.WP_GRADIENT:
+                base = topEdge ? ModConfig.wallpaperColor1 : ModConfig.wallpaperColor2;
+                break;
+            case ModConfig.WP_IMAGE:
+            case ModConfig.WP_NONE:
+            default:
+                base = ModGlassStyle.BG_BASE_COLOR;
+                break;
+        }
+        if (ModConfig.wallpaperDim > 0) {
+            base = ColorUtils.blendARGB(base, 0xFF000000, MathUtils.clamp(ModConfig.wallpaperDim / 100f, 0f, 1f));
+        }
+        return base | 0xFF000000;
+    }
+
+    private boolean isLightWallpaperTop() {
+        return ColorUtils.calculateLuminance(getWallpaperEdgeColor(true)) > 0.7f;
+    }
+
+    /** Включает или обновляет полноэкранные обои мода и согласует системные бары и верхнюю панель. */
     private void applyModWallpaper() {
         if (contentView == null || modWallpaper == null) {
             return;
         }
-        // Режим «нет» рисует обычный цвет фона, поэтому Drawable можно ставить всегда.
-        // Но пока обои никогда не включались, ничего не трогаем: экран остаётся как был.
-        if (false && org.telegram.ghostgram.ModConfig.wallpaperMode == org.telegram.ghostgram.ModConfig.WP_NONE
-                && !modWallpaperAttached) {
-            return;
-        }
-        modWallpaperAttached = true;
         contentView.setBackgroundImage(modWallpaper, false);
-        contentView.invalidateBackground();
+        final boolean searchOpen = searchItem != null && searchItem.isSearchFieldVisible2();
+        if (searchOpen) {
+            if (contentView.backgroundView != null) {
+                contentView.backgroundView.setVisibility(View.INVISIBLE);
+            }
+            contentView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
+        } else {
+            contentView.setBackground(null);
+            if (contentView.backgroundView != null) {
+                contentView.backgroundView.setVisibility(View.VISIBLE);
+            }
+            contentView.invalidateBackground();
+        }
+        updateWallpaperChrome();
+        glassEngine.invalidate();
+    }
+
+    private void updateWallpaperChrome() {
+        final boolean searchOpen = searchItem != null && searchItem.isSearchFieldVisible2();
+        if (simpleActionBar != null) {
+            final int headerTitleColor = searchOpen
+                    ? getThemedColor(Theme.key_windowBackgroundWhiteBlackText)
+                    : (isLightWallpaperTop() ? 0xFF111318 : 0xFFFFFFFF);
+            simpleActionBar.setTitleColor(headerTitleColor);
+            simpleActionBar.updateColors();
+        }
+        if (actionBarFadeView != null) {
+            final int topScrim;
+            if (searchOpen) {
+                final int bg = getThemedColor(Theme.key_windowBackgroundGray);
+                topScrim = Theme.multAlpha(bg, 0.92f);
+                actionBarFadeView.setBackground(new GradientDrawable(
+                        GradientDrawable.Orientation.TOP_BOTTOM,
+                        new int[] { topScrim, Theme.multAlpha(bg, 0.0f) }
+                ));
+            } else {
+                topScrim = isLightWallpaperTop() ? 0x44FFFFFF : 0x55000000;
+                actionBarFadeView.setBackground(new GradientDrawable(
+                        GradientDrawable.Orientation.TOP_BOTTOM,
+                        new int[] { topScrim, topScrim & 0x00FFFFFF }
+                ));
+            }
+        }
+        if (getParentActivity() instanceof LaunchActivity) {
+            ((LaunchActivity) getParentActivity()).checkSystemBarColors(true, true, true);
+        }
     }
 
     @Override
     public View createView(Context context) {
         setHasOwnBackground(true);
         if (modGlass != null) modGlass.release();
+        if (modWallpaper != null) modWallpaper.setCallback(null);
         ModConfig.addListener(modConfigListener);
         modGlassActive = ModConfig.isGlassActive();
-        modWallpaper = org.telegram.ghostgram.ModWallpaperManager.createDrawable();
+        modWallpaper = ModWallpaperManager.createDrawable();
+        modWallpaper.setCallback(modWallpaperCallback);
         contentView = new SizeNotifierFrameLayout(context) {
             @Override
             protected void dispatchDraw(Canvas canvas) {
@@ -346,6 +434,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 animatorSearchPageVisible.setValue(false, true);
                 updateActionBarVisible();
                 applyModGlass();
+                applyModWallpaper();
             }
 
             @Override
@@ -354,6 +443,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 search.search(query = "");
                 updateActionBarVisible();
                 applyModGlass();
+                applyModWallpaper();
             }
 
             @Override
@@ -390,7 +480,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         listView.adapter.setApplyBackground(false);
         listView.setSections();
         listView.setSectionsDrawBackground(true);
-        BaseFragmentSimpleGlass.setListViewParams(listView, 0, 0, dp(12), additionNavigationBarHeight);
+        BaseFragmentSimpleGlass.setListViewParams(listView, 0, 0, ActionBar.getCurrentActionBarHeight(), additionNavigationBarHeight);
         listView.setClipToPadding(false);
         listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
@@ -412,7 +502,6 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         contentView.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
 
         actionBarFadeView = new View(context);
-        actionBarFadeView.setBackground(getBaseSimpleGlass().createActionBarFadeDrawable(actionBarFadeView));
         contentView.addView(actionBarFadeView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 0, Gravity.TOP));
         contentView.addView(simpleActionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.FILL_HORIZONTAL | Gravity.TOP));
 
@@ -442,9 +531,6 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             presentFragment(new DebugSettingsActivity());
         });
 
-        navigationBar = new View(context);
-//        fragmentView.addView(navigationBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 0, Gravity.BOTTOM | Gravity.FILL_HORIZONTAL));
-
         updateActionBarVisible(true, false);
         listView.adapter.update(false);
         setInfo();
@@ -457,14 +543,51 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         updateActionBarVisible(true, false);
 
         ViewCompat.setOnApplyWindowInsetsListener(contentView, this::onApplyWindowInsets);
+        contentView.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+            @Override
+            public void onViewAttachedToWindow(@NonNull View v) {
+                ViewCompat.requestApplyInsets(v);
+            }
+
+            @Override
+            public void onViewDetachedFromWindow(@NonNull View v) {
+            }
+        });
         applyModWallpaper();
         return fragmentView = contentView;
+    }
+
+    @Override
+    protected void onViewCreated(View view) {
+        super.onViewCreated(view);
+        // Позволяем стеклянным пилюлям SimpleActionBar размывать реальные обои мода под ними, а не серый цвет темы.
+        getBaseSimpleGlass().setCapture((canvas, position) -> {
+            if (modWallpaper != null && contentView != null && (searchItem == null || !searchItem.isSearchFieldVisible2())) {
+                int fullW = contentView.getWidth();
+                View rootView = contentView.getRootView();
+                int fullH = rootView != null && rootView.getHeight() > 0 ? rootView.getHeight() : contentView.getHeight();
+                if (fullW > 0 && fullH > 0) {
+                    modWallpaper.setBounds(0, 0, fullW, fullH);
+                    modWallpaper.draw(canvas);
+                }
+            }
+            if (listView != null && contentView != null) {
+                Blur3Utils.captureRelativeParent(listView, canvas, position, listView, contentView);
+            }
+        });
+        int initialTop = mSystemInsets.top > 0 ? mSystemInsets.top : AndroidUtilities.statusBarHeight;
+        int initialBottom = mSystemInsets.bottom > 0 ? mSystemInsets.bottom : AndroidUtilities.navigationBarHeight;
+        applyWindowInsetsToLayout(initialTop, initialBottom);
     }
 
     @Override
     public void onFragmentDestroy() {
         super.onFragmentDestroy();
         if (modGlass != null) modGlass.release();
+        if (modWallpaper != null) {
+            modWallpaper.setCallback(null);
+            modWallpaper = null;
+        }
         ModConfig.removeListener(modConfigListener);
         if (observersGroup != null) {
             observersGroup.removeAllObservers();
@@ -670,20 +793,12 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     }
 
 
-    private int lastNavigationBarColor;
-
     public void updateColors() {
         titleView.setTextColor(ModGlassStyle.HEADER_NAME_COLOR);
         subtitleView.setTextColor(ModGlassStyle.HEADER_PHONE_COLOR);
         if (usernameView != null) usernameView.setTextColor(ModGlassStyle.HEADER_USERNAME_COLOR);
         searchItem.updateColor();
-
-        final int navigationBarColor = getThemedColor(Theme.key_windowBackgroundWhite);
-        if (navigationBar.getBackground() == null || navigationBarColor != lastNavigationBarColor) {
-            lastNavigationBarColor = navigationBarColor;
-            navigationBar.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[] { Theme.multAlpha(navigationBarColor, 0.0f), navigationBarColor }));
-        }
-
+        updateWallpaperChrome();
         listView.invalidate();
     }
 
@@ -925,7 +1040,6 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
     private ArrayList<Integer> accountNumbers = new ArrayList<>();
     private void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         if (searchItem.isSearchFieldVisible2()) {
-            items.add(UItem.asSpace(ActionBar.getCurrentActionBarHeight()));
             search.fillItems(items);
             return;
         }
@@ -1324,15 +1438,52 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         return false;
     }
 
+    @Override
+    public boolean isLightStatusBar() {
+        if (getLastStoryViewer() != null && getLastStoryViewer().isShown()) {
+            return false;
+        }
+        if (searchItem != null && searchItem.isSearchFieldVisible2()) {
+            return super.isLightStatusBar();
+        }
+        return isLightWallpaperTop();
+    }
+
+    @Override
+    public int getNavigationBarColor() {
+        if (searchItem != null && searchItem.isSearchFieldVisible2()) {
+            return super.getNavigationBarColor();
+        }
+        return getWallpaperEdgeColor(false);
+    }
+
     private int navigationBarHeight;
     private int additionNavigationBarHeight;
+
+    private void applyWindowInsetsToLayout(int topInset, int bottomInset) {
+        navigationBarHeight = bottomInset;
+        updateActionBarFadeHeight(topInset);
+        if (listView != null) {
+            BaseFragmentSimpleGlass.setListViewParams(
+                    listView,
+                    topInset,
+                    bottomInset,
+                    ActionBar.getCurrentActionBarHeight(),
+                    additionNavigationBarHeight
+            );
+        }
+    }
+
+    @Override
+    public void onInsets(int left, int top, int right, int bottom) {
+        applyWindowInsetsToLayout(top, bottom);
+    }
 
     @NonNull
     private WindowInsetsCompat onApplyWindowInsets(@NonNull View v, @NonNull WindowInsetsCompat insets) {
         final Insets systemInsets = AndroidUtilities.getDefaultWindowInsets(insets, false);
-        navigationBarHeight = systemInsets.bottom;
-        updateActionBarFadeHeight(systemInsets.top);
-        BaseFragmentSimpleGlass.setListViewParams(listView, systemInsets.top, systemInsets.bottom, dp(12), additionNavigationBarHeight);
+        mSystemInsets = systemInsets;
+        applyWindowInsetsToLayout(systemInsets.top, systemInsets.bottom);
         return WindowInsetsCompat.CONSUMED;
     }
 

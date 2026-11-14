@@ -672,6 +672,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     private int userInfoRow;
     private int channelInfoRow;
     private int usernameRow;
+    private int profileIdRow;
     private int notificationsDividerRow;
     private int notificationsRow;
     private int bizHoursRow;
@@ -3668,7 +3669,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         int initialTab = -1;
         if (openCommonChats) {
             initialTab = SharedMediaLayout.TAB_COMMON_GROUPS;
-        } else if (openGifts && (userInfo != null && userInfo.stargifts_count > 0 || chatInfo != null && chatInfo.stargifts_count > 0)) {
+        } else if (openGifts && (userInfo != null && userInfo.stargifts_count > 0 || chatInfo != null && chatInfo.stargifts_count > 0
+            || org.telegram.ghostgram.LocalProfileStore.count(currentAccount, getDialogId()) > 0)) {
             initialTab = SharedMediaLayout.TAB_GIFTS;
             openedGifts = true;
         } else if (openSimilar) {
@@ -4638,6 +4640,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 }
             } else if (position == noteRow) {
                 editNotes(view, position);
+            } else if (position == profileIdRow) {
+                copyProfileId(false, view);
             } else {
                 processOnClickOrPress(position, view, x, y);
             }
@@ -7642,6 +7646,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             }
             o.show();
             return true;
+        } else if (position == profileIdRow) {
+            return copyProfileId(true, view);
         } else if (position == channelInfoRow || position == userInfoRow || position == locationRow || position == bioRow) {
             if (position == bioRow && (userInfo == null || TextUtils.isEmpty(userInfo.about))) {
                 return false;
@@ -9806,6 +9812,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     @Override
     public void onResume() {
         super.onResume();
+        if (userId == getUserConfig().getClientUserId()) {
+            updateRowsIds();
+        }
         if (sharedMediaLayout != null) {
             sharedMediaLayout.onResume();
         }
@@ -10784,6 +10793,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         locationRow = -1;
         channelInfoRow = -1;
         usernameRow = -1;
+        profileIdRow = -1;
         settingsTimerRow = -1;
         settingsKeyRow = -1;
         notificationsDividerRow = -1;
@@ -10850,7 +10860,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         if (!hasMedia && userInfo != null && userInfo.bot_info != null) {
             hasMedia = userInfo.bot_info.has_preview_medias;
         }
-        if (!hasMedia && (userInfo != null && userInfo.stargifts_count > 0 || chatInfo != null && chatInfo.stargifts_count > 0)) {
+        if (!hasMedia && (userInfo != null && userInfo.stargifts_count > 0 || chatInfo != null && chatInfo.stargifts_count > 0
+            || org.telegram.ghostgram.LocalProfileStore.count(currentAccount, getDialogId()) > 0)) {
             hasMedia = true;
         }
         if (!hasMedia && chatInfo != null) {
@@ -10975,7 +10986,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 if (userInfo != null && !TextUtils.isEmpty(userInfo.about)) {
                     userInfoRow = rowCount++;
                 }
-                if (user != null && username != null) {
+                if (user != null && (username != null || userId == getUserConfig().getClientUserId()
+                    && !TextUtils.isEmpty(org.telegram.ghostgram.LocalProfileStore.usernames(currentAccount)))) {
                     usernameRow = rowCount++;
                 }
                 if (userInfo != null) {
@@ -10991,6 +11003,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     if (userInfo.note != null) {
                         noteRow = rowCount++;
                     }
+                }
+                if (org.telegram.ghostgram.GhostConfig.showProfileId && userId != 0 && userId != getUserConfig().getClientUserId()) {
+                    profileIdRow = rowCount++;
                 }
                 if (actionsView == null && userId != getUserConfig().getClientUserId()) {
                     notificationsRow = rowCount++;
@@ -11113,7 +11128,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 sharedMediaRow = rowCount++;
             }
         } else if (chatId != 0) {
-            if (chatInfo != null && (!TextUtils.isEmpty(chatInfo.about) || chatInfo.location instanceof TLRPC.TL_channelLocation) || ChatObject.isPublic(currentChat)) {
+            if (chatInfo != null && (!TextUtils.isEmpty(chatInfo.about) || chatInfo.location instanceof TLRPC.TL_channelLocation) || ChatObject.isPublic(currentChat) || (org.telegram.ghostgram.GhostConfig.showProfileId && currentChat != null)) {
                 if (emptyRow < 0 && emptyRow2 < 0) {
                     if (hasMusic || hasBalance || peerColor != null || actionsView == null) {
                         emptyRow2 = rowCount++;
@@ -11135,6 +11150,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 }
                 if (ChatObject.isPublic(currentChat)) {
                     usernameRow = rowCount++;
+                }
+                if (org.telegram.ghostgram.GhostConfig.showProfileId && currentChat != null) {
+                    profileIdRow = rowCount++;
                 }
             }
             if (emptyRow < 0 && emptyRow2 < 0) {
@@ -13645,12 +13663,18 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             value = "";
                             usernames = new ArrayList<>();
                         }
-                        detailCell.setTextAndValue(text, alsoUsernamesString(username, usernames, value), infoEndRowEmpty == -1 && (isTopic || bizHoursRow != -1 || bizLocationRow != -1) && birthdayRow < 0);
+                        CharSequence usernameValue = alsoUsernamesString(username, usernames, value);
+                        if (userId == getUserConfig().getClientUserId()) {
+                            usernameValue = org.telegram.ghostgram.LocalProfileStore.usernameLabel(currentAccount, usernameValue);
+                        }
+                        detailCell.setTextAndValue(text, usernameValue, infoEndRowEmpty == -1 && (isTopic || bizHoursRow != -1 || bizLocationRow != -1) && birthdayRow < 0);
                     } else if (position == locationRow) {
                         if (chatInfo != null && chatInfo.location instanceof TLRPC.TL_channelLocation) {
                             TLRPC.TL_channelLocation location = (TLRPC.TL_channelLocation) chatInfo.location;
                             detailCell.setTextAndValue(location.address, LocaleController.getString(R.string.AttachLocation), false);
                         }
+                    } else if (position == profileIdRow) {
+                        detailCell.setTextAndValue(getProfileIdDisplayText(), getProfileIdLabelText(), false);
                     } else if (position == numberRow) {
                         TLRPC.User user = UserConfig.getInstance(currentAccount).getCurrentUser();
                         String value;
@@ -13691,7 +13715,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                                 text = LocaleController.getString(R.string.UsernameEmpty);
                             }
                         }
-                        detailCell.setTextAndValue(text, value, true);
+                        detailCell.setTextAndValue(text, org.telegram.ghostgram.LocalProfileStore.usernameLabel(currentAccount, value), true);
                         detailCell.setContentDescriptionValueFirst(true);
                     }
                     if (containsGift) {
@@ -14387,7 +14411,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             if (position == infoHeaderRow || position == membersHeaderRow || position == settingsSectionRow2 ||
                     position == numberSectionRow || position == helpHeaderRow || position == debugHeaderRow || position == botPermissionsHeader) {
                 return VIEW_TYPE_HEADER;
-            } else if (position == phoneRow || position == locationRow || position == numberRow || position == birthdayRow) {
+            } else if (position == phoneRow || position == locationRow || position == numberRow || position == birthdayRow || position == profileIdRow) {
                 return VIEW_TYPE_TEXT_DETAIL;
             } else if (position == usernameRow || position == setUsernameRow) {
                 return VIEW_TYPE_TEXT_DETAIL_MULTILINE;
@@ -15710,6 +15734,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             put(++pointer, userInfoRow, sparseIntArray);
             put(++pointer, channelInfoRow, sparseIntArray);
             put(++pointer, usernameRow, sparseIntArray);
+            put(++pointer, profileIdRow, sparseIntArray);
             put(++pointer, notificationsDividerRow, sparseIntArray);
             put(++pointer, reportDividerRow, sparseIntArray);
             put(++pointer, notificationsRow, sparseIntArray);
@@ -17103,5 +17128,76 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         keys.add(Theme.key_profile_title);
         keys.add(Theme.key_chat_lockIcon);
         keys.add(Theme.key_avatar_actionBarSelectorBlue);
+    }
+
+    private boolean isRussianLocale() {
+        LocaleController.LocaleInfo info = LocaleController.getInstance().getCurrentLocaleInfo();
+        return info != null && "ru".equalsIgnoreCase(info.pluralLangCode);
+    }
+
+    private String getProfileIdDisplayText() {
+        if (userId != 0) {
+            return String.valueOf(userId);
+        } else if (currentChat != null) {
+            if (ChatObject.isChannel(currentChat)) {
+                return "-100" + chatId;
+            }
+            return "-" + chatId;
+        } else if (chatId != 0) {
+            return String.valueOf(chatId);
+        }
+        return "";
+    }
+
+    private String getProfileIdLabelText() {
+        boolean ru = isRussianLocale();
+        if (userId != 0) {
+            if (isBot) {
+                return ru ? "ID бота" : "Bot ID";
+            }
+            return ru ? "ID пользователя" : "User ID";
+        } else if (currentChat != null) {
+            if (ChatObject.isChannel(currentChat) && !currentChat.megagroup) {
+                return ru ? "ID канала" : "Channel ID";
+            }
+            return ru ? "ID группы" : "Group ID";
+        }
+        return "ID";
+    }
+
+    private boolean copyProfileId(boolean showMenu, View view) {
+        final String displayId = getProfileIdDisplayText();
+        if (TextUtils.isEmpty(displayId)) {
+            return false;
+        }
+        final boolean ru = isRussianLocale();
+        final String copiedToast = ru ? "ID скопирован" : "ID copied";
+        if (!showMenu || view == null || getParentActivity() == null) {
+            if (AndroidUtilities.addToClipboard(displayId)) {
+                BulletinFactory.of(this).createCopyBulletin(copiedToast).show();
+            }
+            return true;
+        }
+        final ItemOptions o = ItemOptions.makeOptions(this, view);
+        o.setScrimViewBackground(listView.getClipBackground(view));
+        o.setLongPressSelectionEnabled(false);
+        o.add(R.drawable.msg_copy, getString(R.string.Copy), () -> {
+            if (AndroidUtilities.addToClipboard(displayId)) {
+                BulletinFactory.of(this).createCopyBulletin(copiedToast).show();
+            }
+        });
+        if (userId == 0 && chatId != 0) {
+            final String rawChatId = String.valueOf(chatId);
+            if (!rawChatId.equals(displayId)) {
+                String rawLabel = ru ? ("Скопировать чистый ID (" + rawChatId + ")") : ("Copy raw ID (" + rawChatId + ")");
+                o.add(R.drawable.msg_copy, rawLabel, () -> {
+                    if (AndroidUtilities.addToClipboard(rawChatId)) {
+                        BulletinFactory.of(this).createCopyBulletin(copiedToast).show();
+                    }
+                });
+            }
+        }
+        o.show();
+        return true;
     }
 }

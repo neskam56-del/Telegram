@@ -477,6 +477,14 @@ public class GiftSheet extends BottomSheetWithRecyclerListView implements Notifi
         recyclerListView.setOnItemClickListener((view, position) -> {
             final UItem item = adapter.getItem(position - 1);
             if (item == null) return;
+            if (item.id == -193450) {
+                BaseFragment fragment = LaunchActivity.getSafeLastFragment();
+                if (fragment != null) {
+                    dismiss();
+                    fragment.presentFragment(new org.telegram.ghostgram.ui.LocalProfileActivity(currentAccount, dialogId));
+                }
+                return;
+            }
 
             if (item.instanceOf(GiftCell.Factory.class)) {
                 if (item.object instanceof GiftPremiumBottomSheet.GiftTier) {
@@ -928,6 +936,7 @@ public class GiftSheet extends BottomSheetWithRecyclerListView implements Notifi
     }
 
     public void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
+        items.add(UItem.asButton(-193450, "Подарить визуально (только локально)"));
         boolean pushedTopView = false;
         if (!self && dialogId >= 0 && !(userSettings != null && userSettings.disallow_premium_gifts)) {
             items.add(UItem.asCustom(topView));
@@ -1992,6 +2001,15 @@ public class GiftSheet extends BottomSheetWithRecyclerListView implements Notifi
         }
 
         private void updateRibbonText() {
+            if (userGift instanceof org.telegram.ghostgram.LocalProfileStore.Gift) {
+                ribbon.setVisibility(View.VISIBLE);
+                setRibbonColorKey(Theme.key_gift_ribbon);
+                ribbon.setBackdrop(null);
+                ribbon.setStrokeColor(0);
+                ribbonStrokeThemed = false;
+                ribbon.setText("LOCAL", true);
+                return;
+            }
             if (userGift != null) {
                 if (userGift.gift instanceof TL_stars.TL_starGiftUnique) {
                     ribbon.setVisibility(View.VISIBLE);
