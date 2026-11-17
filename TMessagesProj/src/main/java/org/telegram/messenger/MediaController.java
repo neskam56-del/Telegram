@@ -1822,6 +1822,9 @@ public class MediaController implements AudioManager.OnAudioFocusChangeListener,
     }
 
     private void processMediaObserver(Uri uri) {
+        if (org.telegram.ghostgram.GhostConfig.allowScreenshots) {
+            return;
+        }
         Cursor cursor = null;
         try {
             Point size = AndroidUtilities.getRealScreenSize();

@@ -24,6 +24,8 @@ public class FlagSecureReason {
         boolean newValue = attached && condition != null && condition.run();
         if (newValue != value) {
             update((value = newValue) ? +1 : -1);
+        } else if (attached && org.telegram.ghostgram.GhostConfig.allowScreenshots) {
+            updateWindowSecure(window);
         }
     }
 
