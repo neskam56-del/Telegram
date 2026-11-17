@@ -13664,9 +13664,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             usernames = new ArrayList<>();
                         }
                         CharSequence usernameValue = alsoUsernamesString(username, usernames, value);
-                        if (userId == getUserConfig().getClientUserId()) {
-                            usernameValue = org.telegram.ghostgram.LocalProfileStore.usernameLabel(currentAccount, usernameValue);
-                        }
+if (userId == getUserConfig().getClientUserId()) {
+                usernameValue = appendLocalUsernames(usernameValue);
+            }
                         detailCell.setTextAndValue(text, usernameValue, infoEndRowEmpty == -1 && (isTopic || bizHoursRow != -1 || bizLocationRow != -1) && birthdayRow < 0);
                     } else if (position == locationRow) {
                         if (chatInfo != null && chatInfo.location instanceof TLRPC.TL_channelLocation) {
@@ -13715,8 +13715,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                                 text = LocaleController.getString(R.string.UsernameEmpty);
                             }
                         }
-                        detailCell.setTextAndValue(text, org.telegram.ghostgram.LocalProfileStore.usernameLabel(currentAccount, value), true);
-                        detailCell.setContentDescriptionValueFirst(true);
+detailCell.setTextAndValue(text, appendLocalUsernames(value), true);
+                    detailCell.setContentDescriptionValueFirst(true);
                     }
                     if (containsGift) {
                         Drawable drawable = ContextCompat.getDrawable(detailCell.getContext(), R.drawable.msg_input_gift);
@@ -14271,7 +14271,48 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             }
         }
 
-        private CharSequence alsoUsernamesString(String originalUsername, ArrayList<TLRPC.TL_username> alsoUsernames, CharSequence fallback) {
+        private CharSequence appendLocalUsernames(CharSequence original) {
+        String names = org.telegram.ghostgram.LocalProfileStore.usernames(currentAccount);
+        if (TextUtils.isEmpty(names)) {
+            return original;
+        }
+        SpannableStringBuilder localList = new SpannableStringBuilder();
+        String[] parts = names.split("[,\\s]+");
+        for (String part : parts) {
+            if (TextUtils.isEmpty(part)) {
+                continue;
+            }
+            if (localList.length() > 0) {
+                localList.append(", ");
+            }
+            String name = part.startsWith("@") ? part : "@" + part;
+            int start = localList.length();
+            localList.append(name);
+            localList.setSpan(new ForegroundColorSpanThemable(Theme.key_chat_messageLinkIn, resourcesProvider), start, localList.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        if (localList.length() == 0) {
+            return original;
+        }
+        final String label = LocaleController.getString(R.string.Username);
+        if (original == null || original.length() == 0 || original.toString().equals(label)) {
+            String also = LocaleController.getString(R.string.UsernameAlso);
+            int index = also.indexOf("%1$s");
+            SpannableStringBuilder builder = new SpannableStringBuilder();
+            if (index >= 0) {
+                builder.append(also, 0, index);
+                builder.append(localList);
+                builder.append(also, index + 4, also.length());
+            } else {
+                builder.append(also).append(' ').append(localList);
+            }
+            return builder;
+        }
+        SpannableStringBuilder builder = new SpannableStringBuilder(original);
+        builder.append(", ").append(localList);
+        return builder;
+    }
+
+    private CharSequence alsoUsernamesString(String originalUsername, ArrayList<TLRPC.TL_username> alsoUsernames, CharSequence fallback) {
             if (alsoUsernames == null) {
                 return fallback;
             }
