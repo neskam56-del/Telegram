@@ -57,6 +57,8 @@ public class GhostgramSettingsActivity extends BaseFragment {
     private int customPhoneRow;
     private int customPhoneValueRow;
     private int extraShadowRow;
+    private int checkUpdatesRow;
+    private int updateWifiOnlyRow;
 
     // Секция: Изменитель голоса
     private int voiceHeaderRow;
@@ -250,6 +252,11 @@ public class GhostgramSettingsActivity extends BaseFragment {
             } else if (position == hideRecommendationsRow) {
                 GhostConfig.hideChannelRecommendations = !GhostConfig.hideChannelRecommendations;
                 cell.setChecked(GhostConfig.hideChannelRecommendations);
+            } else if (position == updateWifiOnlyRow) {
+                GhostConfig.updateWifiOnly = !GhostConfig.updateWifiOnly;
+                cell.setChecked(GhostConfig.updateWifiOnly);
+            } else if (position == checkUpdatesRow) {
+                org.telegram.ghostgram.update.GhostUpdateManager.check(true, getParentActivity(), true);
             }
             GhostConfig.saveConfig();
         });
@@ -343,7 +350,8 @@ public class GhostgramSettingsActivity extends BaseFragment {
                    position == force120HzRow || position == forwardNoAuthorRow || position == hidePhoneNumberRow ||
                    position == customPhoneRow || position == customPhoneValueRow ||
                    position == voicePresetRow || position == deviceSpoofRow || position == devicePresetRow ||
-                   position == fakeLocationRow || position == showProfileIdRow || position == compactDialogsRow || position == hideRecommendationsRow;
+                   position == fakeLocationRow || position == showProfileIdRow || position == compactDialogsRow || position == hideRecommendationsRow ||
+                   position == checkUpdatesRow || position == updateWifiOnlyRow;
         }
 
         @Override
@@ -356,7 +364,7 @@ public class GhostgramSettingsActivity extends BaseFragment {
                     position == voiceShadowRow || position == deviceShadowRow ||
                     position == locationShadowRow || position == customShadowRow) {
                 return TYPE_SHADOW;
-            } else if (position == localProfileRow || position == voicePresetRow || position == devicePresetRow || position == customPhoneValueRow) {
+            } else if (position == localProfileRow || position == voicePresetRow || position == devicePresetRow || position == customPhoneValueRow || position == checkUpdatesRow) {
                 return TYPE_SETTINGS;
             }
             return TYPE_CHECK;
@@ -545,6 +553,14 @@ public class GhostgramSettingsActivity extends BaseFragment {
                             GhostConfig.hideChannelRecommendations,
                             true,
                             false
+                        );
+                    } else if (position == updateWifiOnlyRow) {
+                        cell.setTextAndValueAndCheck(
+                            "Обновления только по Wi-Fi",
+                            "Не скачивать APK по мобильной сети",
+                            GhostConfig.updateWifiOnly,
+                            true,
+                            true
                         );
                     }
                     break;

@@ -7,4 +7,13 @@ public class ApplicationLoaderImpl extends ApplicationLoader {
     protected String onGetApplicationId() {
         return BuildConfig.APPLICATION_ID;
     }
+
+    @Override
+    public void onResume() {
+        try {
+            org.telegram.ghostgram.update.GhostUpdateManager.onAppResume();
+        } catch (Throwable e) {
+            FileLog.e(e);
+        }
+    }
 }

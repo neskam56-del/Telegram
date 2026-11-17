@@ -63,6 +63,13 @@ public class GhostConfig {
 
     public static int voiceChangerPreset = 0;               // Изменитель голоса: 0-Off, 1-Bass, 2-High, 3-Robot, 4-Echo, 5-Whisper
 
+    // ===== OTA-обновления (полный APK) =====
+    public static final String DEFAULT_UPDATE_URL = "https://fgram-updates.neskam56.workers.dev/update.json";
+    public static String updateManifestUrl = DEFAULT_UPDATE_URL;   // HTTPS-адрес манифеста обновления (JSON)
+    public static boolean updateWifiOnly = true;                    // Скачивать обновление только по Wi-Fi
+    public static long lastUpdateCheckTime = 0L;                    // Время последней проверки (для лимита 12 часов)
+    public static int ignoredUpdateVersionCode = 0;                 // Версия, отложенная кнопкой "Позже"
+
     public static void init(Context context) {
         prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         loadConfig();
@@ -111,6 +118,12 @@ public class GhostConfig {
         voiceChangerPreset = prefs.getInt("voice_changer_preset", 0);
         customPhoneEnabled = prefs.getBoolean("custom_phone_enabled", false);
         customPhone = prefs.getString("custom_phone", "");
+
+        // OTA-обновления
+        updateManifestUrl = prefs.getString("update_manifest_url", DEFAULT_UPDATE_URL);
+        updateWifiOnly = prefs.getBoolean("update_wifi_only", true);
+        lastUpdateCheckTime = prefs.getLong("update_last_check", 0L);
+        ignoredUpdateVersionCode = prefs.getInt("update_ignored_code", 0);
     }
 
     public static void saveConfig() {

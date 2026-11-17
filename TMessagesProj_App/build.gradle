@@ -130,11 +130,11 @@ android {
             }
             buildConfigField "boolean", "BUNDLE", "true"
         }
-        afat {
-            ndk {
-                abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
-            }
-            sourceSets.debug {
+    afat {
+        ndk {
+            abiFilters "arm64-v8a"
+        }
+        sourceSets.debug {
                 manifest.srcFile '../TMessagesProj/config/debug/AndroidManifest_SDK23.xml'
             }
             sourceSets.release {
