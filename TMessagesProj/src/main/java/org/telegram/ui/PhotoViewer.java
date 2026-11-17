@@ -14151,7 +14151,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     needSearchImageInArr = false;
                 } else if (currentAnimation != null) {
                     needSearchImageInArr = false;
-                    if (messageObject.canForwardMessage() && !noforwards) {
+                    if (messageObject.canForwardMessage() && (!noforwards || org.telegram.ghostgram.GhostConfig.bypassNoForwards)) {
                         setItemVisible(sendItem, true, false);
                     }
                 } else if (!messageObject.scheduled && !messageObject.isQuickReply() && !messageObject.isSponsored() && !(MessageObject.getMedia(messageObject.messageOwner) instanceof TLRPC.TL_messageMediaInvoice) && !(MessageObject.getMedia(messageObject.messageOwner) instanceof TLRPC.TL_messageMediaWebPage) && (messageObject.messageOwner.action == null || messageObject.messageOwner.action instanceof TLRPC.TL_messageActionEmpty)) {
@@ -14260,7 +14260,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 } else {
                     menuItem.hideSubItem(gallery_menu_reply);
                 }
-                if (openingObject.canForwardMessage() && !noforwards) {
+                if (openingObject.canForwardMessage() && (!noforwards || org.telegram.ghostgram.GhostConfig.bypassNoForwards)) {
                     setItemVisible(sendItem, true, false);
                 }
                 if (openingObject.canPreviewDocument()) {

@@ -50,6 +50,7 @@ public class GhostgramSettingsActivity extends BaseFragment {
     // Секция: Безопасность и экран
     private int extraHeaderRow;
     private int allowScreenshotsRow;
+    private int bypassForwardsRow;
     private int force120HzRow;
     private int forwardNoAuthorRow;
     private int hidePhoneNumberRow;
@@ -115,6 +116,7 @@ public class GhostgramSettingsActivity extends BaseFragment {
         // Extra
         extraHeaderRow = rowCount++;
         allowScreenshotsRow = rowCount++;
+        bypassForwardsRow = rowCount++;
         force120HzRow = rowCount++;
         forwardNoAuthorRow = rowCount++;
         hidePhoneNumberRow = rowCount++;
@@ -215,6 +217,9 @@ public class GhostgramSettingsActivity extends BaseFragment {
             } else if (position == allowScreenshotsRow) {
                 GhostConfig.allowScreenshots = !GhostConfig.allowScreenshots;
                 cell.setChecked(GhostConfig.allowScreenshots);
+            } else if (position == bypassForwardsRow) {
+                GhostConfig.bypassNoForwards = !GhostConfig.bypassNoForwards;
+                cell.setChecked(GhostConfig.bypassNoForwards);
             } else if (position == force120HzRow) {
                 GhostConfig.force120Hz = !GhostConfig.force120Hz;
                 cell.setChecked(GhostConfig.force120Hz);
@@ -334,7 +339,7 @@ public class GhostgramSettingsActivity extends BaseFragment {
             int position = holder.getAdapterPosition();
             return position == localProfileRow || position == ghostModeMasterRow || position == showGhostButtonRow ||
                    position == hideReadRow || position == hideTypingRow || position == hideOnlineRow ||
-                   position == antiDeleteRow || position == allowScreenshotsRow ||
+                   position == antiDeleteRow || position == allowScreenshotsRow || position == bypassForwardsRow ||
                    position == force120HzRow || position == forwardNoAuthorRow || position == hidePhoneNumberRow ||
                    position == customPhoneRow || position == customPhoneValueRow ||
                    position == voicePresetRow || position == deviceSpoofRow || position == devicePresetRow ||
@@ -458,6 +463,14 @@ public class GhostgramSettingsActivity extends BaseFragment {
                             "Разрешить скриншоты",
                             "Обход FLAG_SECURE в секретных чатах",
                             GhostConfig.allowScreenshots,
+                            true,
+                            true
+                        );
+} else if (position == bypassForwardsRow) {
+                        cell.setTextAndValueAndCheck(
+                            "Пересылка из защищённых чатов",
+                            "Обход noforwards: отправка копией",
+                            GhostConfig.bypassNoForwards,
                             true,
                             true
                         );

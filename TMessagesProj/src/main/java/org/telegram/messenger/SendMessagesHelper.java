@@ -2230,6 +2230,54 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         return sendMessage(messages, peer, forwardFromMyName, hideCaption, notify, scheduleDate, 0, replyToTopMsg, video_timestamp, payStars, 0, null);
     }
 
+    private boolean isProtectedMessageSource(MessageObject msg) {
+        if (msg == null || msg.messageOwner == null) {
+            return false;
+        }
+        if (msg.messageOwner.noforwards) {
+            return true;
+        }
+        long dialogId = msg.getDialogId();
+        if (dialogId > 0) {
+            TLRPC.UserFull userFull = getMessagesController().getUserFull(dialogId);
+            return userFull != null && (userFull.noforwards_peer_enabled || userFull.noforwards_my_enabled);
+        }
+        TLRPC.Chat chat = getMessagesController().getChat(-dialogId);
+        return chat != null && chat.noforwards;
+    }
+
+    /** Ghostgram: вместо серверного forward из защищённого чата отправляем копию
+     *  (текст + entities или медиа по file reference). */
+    private boolean sendProtectedCopy(MessageObject msg, long peer, boolean notify, int scheduleDate, int scheduleRepeatPeriod, MessageObject replyToTopMsg) {
+        if (msg == null || msg.messageOwner == null) {
+            return false;
+        }
+        TLRPC.MessageMedia media = msg.messageOwner.media;
+        String caption = msg.messageOwner.message;
+        if (media instanceof TLRPC.TL_messageMediaPhoto && media.photo instanceof TLRPC.TL_photo) {
+            TLRPC.TL_photo photo = (TLRPC.TL_photo) media.photo;
+            if (photo.access_hash == 0) {
+                return false;
+            }
+            SendMessageParams params = SendMessageParams.of(photo, null, peer, null, replyToTopMsg, caption, msg.messageOwner.entities, null, null, notify, scheduleDate, scheduleRepeatPeriod, 0, null, false, false);
+            sendMessage(params);
+            return true;
+        } else if (media instanceof TLRPC.TL_messageMediaDocument && media.document instanceof TLRPC.TL_document) {
+            TLRPC.TL_document document = (TLRPC.TL_document) media.document;
+            if (document.access_hash == 0) {
+                return false;
+            }
+            SendMessageParams params = SendMessageParams.of(document, null, null, peer, null, replyToTopMsg, caption, msg.messageOwner.entities, null, null, notify, scheduleDate, scheduleRepeatPeriod, 0, null, null, false, false);
+            sendMessage(params);
+            return true;
+        } else if (!TextUtils.isEmpty(caption)) {
+            SendMessageParams params = SendMessageParams.of(caption, peer, null, replyToTopMsg, null, false, msg.messageOwner.entities, null, null, notify, scheduleDate, scheduleRepeatPeriod, null, false);
+            sendMessage(params);
+            return true;
+        }
+        return false;
+    }
+
     public int sendMessage(
         ArrayList<MessageObject> messages,
         final long peer,
@@ -2246,6 +2294,24 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     ) {
         if (messages == null || messages.isEmpty()) {
             return 0;
+        }
+        if (org.telegram.ghostgram.GhostConfig.bypassNoForwards) {
+            boolean protectedSource = false;
+            for (int i = 0; i < messages.size(); i++) {
+                if (isProtectedMessageSource(messages.get(i))) {
+                    protectedSource = true;
+                    break;
+                }
+            }
+            if (protectedSource) {
+                int copied = 0;
+                for (int i = 0; i < messages.size(); i++) {
+                    if (sendProtectedCopy(messages.get(i), peer, notify, scheduleDate, scheduleRepeatPeriod, replyToTopMsg)) {
+                        copied++;
+                    }
+                }
+                return copied;
+            }
         }
         int sendResult = 0;
         long myId = getUserConfig().getClientUserId();
