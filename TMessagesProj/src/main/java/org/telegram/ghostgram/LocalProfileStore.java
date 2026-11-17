@@ -111,7 +111,27 @@ public final class LocalProfileStore {
 
     public static CharSequence usernameLabel(int account, CharSequence original) {
         String names = usernames(account);
-        return TextUtils.isEmpty(names) ? original : TextUtils.concat(original, "\nNFT usernames (local): ", names);
+        if (TextUtils.isEmpty(names)) {
+            return original;
+        }
+        StringBuilder builder = new StringBuilder();
+        String[] parts = names.split("[,\\s]+");
+        for (String part : parts) {
+            if (TextUtils.isEmpty(part)) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            builder.append(part.startsWith("@") ? part : "@" + part);
+        }
+        if (builder.length() == 0) {
+            return original;
+        }
+        if (original == null || original.length() == 0) {
+            return builder.toString();
+        }
+        return TextUtils.concat(original, "\n", builder.toString());
     }
 
     public static void clear(int account, long dialogId) {
