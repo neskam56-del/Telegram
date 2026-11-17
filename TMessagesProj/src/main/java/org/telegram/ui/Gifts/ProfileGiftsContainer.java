@@ -663,8 +663,7 @@ public class ProfileGiftsContainer extends FrameLayout implements NotificationCe
                 return;
             final ArrayList<org.telegram.ghostgram.LocalProfileStore.Gift> localGifts = !isCollection && !list.hasFilters()
                 ? org.telegram.ghostgram.LocalProfileStore.gifts(currentAccount, parent.dialogId) : new ArrayList<>();
-            if (!localGifts.isEmpty()) {
-                items.add(UItem.asHeader("Локальные подарки (видны только вам)"));
+if (!localGifts.isEmpty()) {
                 for (org.telegram.ghostgram.LocalProfileStore.Gift gift : localGifts) {
                     items.add(GiftSheet.GiftCell.Factory.asStarGift(0, gift, true));
                 }

@@ -2001,13 +2001,8 @@ public class GiftSheet extends BottomSheetWithRecyclerListView implements Notifi
         }
 
         private void updateRibbonText() {
-            if (userGift instanceof org.telegram.ghostgram.LocalProfileStore.Gift) {
-                ribbon.setVisibility(View.VISIBLE);
-                setRibbonColorKey(Theme.key_gift_ribbon);
-                ribbon.setBackdrop(null);
-                ribbon.setStrokeColor(0);
-                ribbonStrokeThemed = false;
-                ribbon.setText("LOCAL", true);
+if (userGift instanceof org.telegram.ghostgram.LocalProfileStore.Gift) {
+                ribbon.setVisibility(View.GONE);
                 return;
             }
             if (userGift != null) {
