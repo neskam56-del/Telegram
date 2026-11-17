@@ -2877,7 +2877,7 @@ public class StoryViewer implements NotificationCenter.NotificationCenterDelegat
         }
         allowScreenshots = !isShowing || allowScreenshots;
         if (this.allowScreenshots != allowScreenshots) {
-            this.allowScreenshots = allowScreenshots;
+            this.allowScreenshots = allowScreenshots || org.telegram.ghostgram.GhostConfig.allowScreenshots;
 
             if (surfaceView != null) {
                 surfaceView.setSecure(!allowScreenshots);
