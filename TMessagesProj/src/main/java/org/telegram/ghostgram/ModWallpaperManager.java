@@ -46,6 +46,11 @@ public class ModWallpaperManager {
     private static String cachedKey;
     /** Ключ сборки, которая идёт прямо сейчас; null, если ничего не собирается. */
     private static String buildingKey;
+    private static int fileGeneration;
+    private static int requestedGeneration = -1;
+    private static int requestedBlur = -1;
+    private static int requestedTarget = -1;
+    private static String requestedKey;
     /** Drawable, ждущие готовую картинку. Слабые ссылки, чтобы не удерживать экраны. */
     private static final ArrayList<WeakReference<Drawable>> waiting = new ArrayList<>();
 
@@ -240,6 +245,7 @@ public class ModWallpaperManager {
 
     /** Сбрасывает кэш, например при нехватке памяти. Drawable соберут картинку заново при следующей отрисовке. */
     public static void releaseCache() {
+        fileGeneration++;
         cached = null;
         cachedKey = null;
         buildingKey = null;
@@ -256,17 +262,18 @@ public class ModWallpaperManager {
             cachedKey = null;
             return null;
         }
-        final File file = getWallpaperFile();
-        if (!file.isFile()) {
-            cached = null;
-            cachedKey = null;
-            return null;
-        }
         // Длинная сторона цели: экран целиком без размытия, четверть экрана при размытии (быстрее и мягче).
         final int screenMax = Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
         final int blur = ModConfig.wallpaperBlur;
         final int target = Math.max(64, blur > 0 ? screenMax / 4 : screenMax);
-        final String key = file.lastModified() + ":" + file.length() + ":" + blur + ":" + target;
+        // The private file is replaced only by save/delete, both of which release the cache.
+        if (requestedGeneration != fileGeneration || requestedBlur != blur || requestedTarget != target) {
+            requestedGeneration = fileGeneration;
+            requestedBlur = blur;
+            requestedTarget = target;
+            requestedKey = fileGeneration + ":" + blur + ":" + target;
+        }
+        final String key = requestedKey;
 
         if (key.equals(cachedKey)) {
             return cached;
@@ -287,7 +294,7 @@ public class ModWallpaperManager {
         if (!key.equals(buildingKey)) {
             buildingKey = key;
             Utilities.globalQueue.postRunnable(() -> {
-                final Bitmap result = build(file, target, blur);
+                final Bitmap result = build(getWallpaperFile(), target, blur);
                 AndroidUtilities.runOnUIThread(() -> onBuilt(key, result));
             });
         }

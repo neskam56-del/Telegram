@@ -11856,11 +11856,19 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                                  boolean firstInChat,
                                  boolean lastInChatList) {
         if (messageObject != null) {
-            if (org.telegram.ghostgram.GhostConfig.antiDeleteEnabled) {
-                messageObject.isGhostDeleted = org.telegram.ghostgram.antidelete.AntiDeleteManager.getInstance().isMessageDeleted(messageObject.getId());
-            }
-            if (org.telegram.ghostgram.GhostConfig.antiEditEnabled) {
-                messageObject.isGhostEdited = org.telegram.ghostgram.antidelete.AntiDeleteManager.getInstance().hasEditHistory(messageObject.getId(), messageObject.getDialogId());
+            if (!org.telegram.ghostgram.GhostConfig.antiDeleteEnabled) messageObject.isGhostDeleted = false;
+            if (!org.telegram.ghostgram.GhostConfig.antiEditEnabled) messageObject.isGhostEdited = false;
+            if (org.telegram.ghostgram.GhostConfig.antiDeleteEnabled || org.telegram.ghostgram.GhostConfig.antiEditEnabled) {
+                java.lang.ref.WeakReference<ChatMessageCell> cellRef = new java.lang.ref.WeakReference<>(this);
+                org.telegram.ghostgram.antidelete.AntiDeleteManager.getInstance().loadDecoration(messageObject, () -> {
+                    ChatMessageCell cell = cellRef.get();
+                    if (cell != null && cell.currentMessageObject == messageObject) {
+                        messageObject.forceUpdate = true;
+                        cell.setMessageObject(messageObject, cell.currentMessagesGroup, cell.pinnedBottom, cell.pinnedTop, cell.firstInChat, lastInChatList);
+                        cell.requestLayout();
+                        cell.invalidate();
+                    }
+                });
             }
         }
         if (attachedToWindow && !frozen) {
@@ -15643,7 +15651,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         } else {
             currentTimeString = timeString;
         }
-        if (currentMessageObject.isGhostDeleted && org.telegram.ghostgram.GhostConfig.antiDeleteShowIcon) {
+        if (currentMessageObject.isGhostDeleted && org.telegram.ghostgram.GhostConfig.antiDeleteEnabled && org.telegram.ghostgram.GhostConfig.antiDeleteShowIcon) {
             currentTimeString = "🗑 " + currentTimeString;
         } else if (currentMessageObject.isGhostEdited && org.telegram.ghostgram.GhostConfig.antiEditEnabled) {
             currentTimeString = "✏️ " + currentTimeString;

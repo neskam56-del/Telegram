@@ -1675,7 +1675,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
         } else if (main_tab instanceof TLRPC.TL_profileTabPosts && (userInfo != null && userInfo.stories_pinned_available || chatInfo != null && chatInfo.stories_pinned_available || isStoriesView())) {
             this.initialTab = TAB_STORIES;
         } else if (main_tab instanceof TLRPC.TL_profileTabGifts && (userInfo != null && userInfo.stargifts_count > 0 || chatInfo != null && chatInfo.stargifts_count > 0
-                || org.telegram.ghostgram.LocalProfileStore.count(profileActivity.getCurrentAccount(), dialog_id) > 0)) {
+                || org.telegram.ghostgram.LocalProfileStore.count(parent.getCurrentAccount(), did) > 0)) {
             this.initialTab = TAB_GIFTS;
         } else if (main_tab instanceof TLRPC.TL_profileTabFiles && (hasMedia[1] == -1 || hasMedia[1] > 0)) {
             this.initialTab = TAB_FILES;
@@ -1690,7 +1690,7 @@ public class SharedMediaLayout extends FrameLayout implements Theme.Colorable, N
         } else if (userInfo != null && userInfo.stories_pinned_available || chatInfo != null && chatInfo.stories_pinned_available || isStoriesView()) {
             this.initialTab = getInitialTab();
         } else if (userInfo != null && userInfo.stargifts_count > 0 || chatInfo != null && chatInfo.stargifts_count > 0
-                || org.telegram.ghostgram.LocalProfileStore.count(profileActivity.getCurrentAccount(), dialog_id) > 0) {
+                || org.telegram.ghostgram.LocalProfileStore.count(parent.getCurrentAccount(), did) > 0) {
             this.initialTab = TAB_GIFTS;
         } else if (initialTab != -1 && topicId == 0) {
             this.initialTab = initialTab;

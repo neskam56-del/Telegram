@@ -2,6 +2,9 @@ package org.telegram.ghostgram;
 
 import android.app.ActivityManager;
 import android.content.Context;
+import android.content.BroadcastReceiver;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.os.PowerManager;
 
@@ -28,6 +31,20 @@ public class ModConfig {
     private static Context appContext;
     private static final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
     private static boolean liteModeListenerRegistered;
+    private static boolean powerReceiverRegistered;
+    private static boolean batterySaverOn;
+    private static boolean lowRamDevice;
+    private static final BroadcastReceiver powerReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+            boolean enabled = pm != null && pm.isPowerSaveMode();
+            if (batterySaverOn != enabled) {
+                batterySaverOn = enabled;
+                bumpAndNotify();
+            }
+        }
+    };
 
     // ---- Liquid Glass ----
     /** Главный переключатель стеклянных панелей (синхронизируется с LiteMode.FLAG_LIQUID_GLASS). */
@@ -67,6 +84,13 @@ public class ModConfig {
 
     public static void init(Context context) {
         appContext = context.getApplicationContext();
+        ActivityManager am = (ActivityManager) appContext.getSystemService(Context.ACTIVITY_SERVICE);
+        lowRamDevice = am != null && am.isLowRamDevice();
+        if (!powerReceiverRegistered) {
+            appContext.registerReceiver(powerReceiver, new IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED));
+            powerReceiverRegistered = true;
+        }
+        powerReceiver.onReceive(appContext, null);
         prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         load();
         syncLiteModeFlag();
@@ -180,12 +204,7 @@ public class ModConfig {
     }
 
     private static boolean isBatterySaverOn() {
-        if (appContext != null) {
-            PowerManager pm = (PowerManager) appContext.getSystemService(Context.POWER_SERVICE);
-            if (pm != null && pm.isPowerSaveMode()) {
-                return true;
-            }
-        }
+        if (batterySaverOn) return true;
         try {
             if (LiteMode.isPowerSaverApplied()) {
                 return true;
@@ -196,9 +215,7 @@ public class ModConfig {
     }
 
     private static boolean isLowEndDevice() {
-        if (appContext == null) return false;
-        ActivityManager am = (ActivityManager) appContext.getSystemService(Context.ACTIVITY_SERVICE);
-        return am != null && am.isLowRamDevice();
+        return lowRamDevice;
     }
 
     private static int clamp(int v, int min, int max) {

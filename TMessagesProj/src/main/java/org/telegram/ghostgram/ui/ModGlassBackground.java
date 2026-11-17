@@ -41,7 +41,12 @@ public final class ModGlassBackground implements Drawable.Callback {
     private final RectF destination = new RectF();
     private final float[] radii = new float[8];
     private Bitmap blurred;
-    private String key;
+    private int snapshotWidth;
+    private int snapshotHeight;
+    private int snapshotRevision;
+    private boolean snapshotDark;
+    private float pathTopRadius = -1;
+    private float pathBottomRadius = -1;
     private int generation;
     private boolean dirty = true;
     private boolean released;
@@ -65,12 +70,16 @@ public final class ModGlassBackground implements Drawable.Callback {
 
     public void draw(Canvas canvas, RectF bounds, float topRadius, float bottomRadius,
                      float alpha, View root, View target) {
-        rect.set(bounds);
-        for (int i = 0; i < 8; i++) {
-            radii[i] = i < 4 ? topRadius : bottomRadius;
+        if (!rect.equals(bounds) || pathTopRadius != topRadius || pathBottomRadius != bottomRadius) {
+            rect.set(bounds);
+            pathTopRadius = topRadius;
+            pathBottomRadius = bottomRadius;
+            for (int i = 0; i < 8; i++) {
+                radii[i] = i < 4 ? topRadius : bottomRadius;
+            }
+            path.rewind();
+            path.addRoundRect(rect, radii, Path.Direction.CW);
         }
-        path.rewind();
-        path.addRoundRect(rect, radii, Path.Direction.CW);
         if (!ModConfig.isGlassActive()) {
             // Flat: solid fill + thin border, no blur, no highlight.
             paint.setColor(Theme.multAlpha(ModGlassStyle.FLAT_FILL_COLOR, alpha));
@@ -81,7 +90,7 @@ public final class ModGlassBackground implements Drawable.Callback {
         }
         canvas.save();
         canvas.clipPath(path);
-        if (ModConfig.isBlurSupported() && ModConfig.glassBlur > 0) {
+        if (ModConfig.isBlurSupported() && !org.telegram.ghostgram.GhostConfig.disableBlur && ModConfig.glassBlur > 0) {
             prepare(root);
             if (blurred != null) {
                 // Координаты обоев неподвижны, при прокрутке меняется только маска панели.
@@ -114,10 +123,15 @@ public final class ModGlassBackground implements Drawable.Callback {
         int width = root.getWidth();
         int height = root.getRootView().getHeight();
         if (width <= 0 || height <= 0 || released) return;
-        String nextKey = width + ":" + height + ":" + ModConfig.getRevision() + ":" + Theme.isCurrentThemeDark();
-        if (!dirty && nextKey.equals(key)) return;
+        int revision = ModConfig.getRevision();
+        boolean dark = Theme.isCurrentThemeDark();
+        if (!dirty && snapshotWidth == width && snapshotHeight == height
+                && snapshotRevision == revision && snapshotDark == dark) return;
         dirty = false;
-        key = nextKey;
+        snapshotWidth = width;
+        snapshotHeight = height;
+        snapshotRevision = revision;
+        snapshotDark = dark;
         final int token = ++generation;
         final float radius = AndroidUtilities.dpf2(ModGlassStyle.GLASS_BLUR_DP) * (ModConfig.glassBlur / 50f) / 3f;
         // Снимок маленький; декодирование картинки уже выполняет ModWallpaperManager в фоне.

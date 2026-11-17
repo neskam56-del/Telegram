@@ -34230,12 +34230,14 @@ public class ChatActivity extends BaseFragment implements
                 if (!res.messages.isEmpty()) {
                     final int firstMsgId = res.messages.get(0).id;
                     AndroidUtilities.runOnUIThread(() -> {
+                        if (isFinishing() || getParentActivity() == null || fragmentView == null) return;
                         scrollToMessageId(firstMsgId, 0, true, 0, true, 0);
-                        BulletinFactory.of(ChatActivity.this).createSimpleBulletin(R.drawable.msg_go_up, "Переход к первому сообщению").show();
+                        BulletinFactory.of(ChatActivity.this).createSimpleBulletin(getParentActivity().getDrawable(R.drawable.msg_go_up), "Переход к первому сообщению").show();
                     });
                 } else {
                     AndroidUtilities.runOnUIThread(() -> {
-                        BulletinFactory.of(ChatActivity.this).createSimpleBulletin(R.drawable.msg_go_up, "Первое сообщение не найдено").show();
+                        if (isFinishing() || getParentActivity() == null || fragmentView == null) return;
+                        BulletinFactory.of(ChatActivity.this).createSimpleBulletin(getParentActivity().getDrawable(R.drawable.msg_go_up), "Первое сообщение не найдено").show();
                     });
                 }
             }

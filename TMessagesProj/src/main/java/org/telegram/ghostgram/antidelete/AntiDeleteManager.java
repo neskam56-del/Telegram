@@ -6,9 +6,12 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.content.Context;
 import android.text.TextUtils;
+import android.util.LruCache;
 
 import org.telegram.ghostgram.GhostConfig;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.Utilities;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
@@ -28,18 +31,94 @@ import java.util.HashMap;
 public class AntiDeleteManager {
 
     private static final String TAG = "AntiDelete";
-    private static AntiDeleteManager instance;
-    private GhostDeletedDatabase db;
+    private static final AntiDeleteManager instance = new AntiDeleteManager();
+    private volatile GhostDeletedDatabase db;
+    // Accessed on the UI thread; cache negative lookups as well as saved markers.
+    private final LruCache<String, Integer> decorationCache = new LruCache<>(2048);
+    private final HashMap<String, ArrayList<Runnable>> pendingDecorations = new HashMap<>();
+    private int decorationGeneration;
 
     public static AntiDeleteManager getInstance() {
-        if (instance == null) {
-            instance = new AntiDeleteManager();
-        }
         return instance;
     }
 
-    public void init(Context context) {
-        db = new GhostDeletedDatabase(context);
+    public synchronized void init(Context context) {
+        if (db == null) {
+            db = new GhostDeletedDatabase(context.getApplicationContext());
+        }
+    }
+
+    private void invalidateDecorations() {
+        AndroidUtilities.runOnUIThread(() -> {
+            decorationGeneration++;
+            decorationCache.evictAll();
+        });
+    }
+
+    /** Never opens SQLite from a message-cell bind. Callback runs on the UI thread. */
+    public void loadDecoration(MessageObject message, Runnable onLoaded) {
+        if (db == null) return;
+        final int messageId = message.getId();
+        final long dialogId = message.getDialogId();
+        final int account = message.currentAccount;
+        final long channelId = message.messageOwner.peer_id == null ? 0 : message.messageOwner.peer_id.channel_id;
+        final String key = message.currentAccount + ":" + dialogId + ":" + messageId;
+        Integer flags = decorationCache.get(key);
+        if (flags != null) {
+            message.isGhostDeleted = GhostConfig.antiDeleteEnabled && (flags & 1) != 0;
+            message.isGhostEdited = GhostConfig.antiEditEnabled && (flags & 2) != 0;
+            return;
+        }
+        Runnable apply = () -> {
+            Integer loaded = decorationCache.get(key);
+            if (loaded == null) {
+                loadDecoration(message, onLoaded);
+                return;
+            }
+            boolean deleted = GhostConfig.antiDeleteEnabled && (loaded & 1) != 0;
+            boolean edited = GhostConfig.antiEditEnabled && (loaded & 2) != 0;
+            if (deleted || edited || message.isGhostDeleted != deleted || message.isGhostEdited != edited) {
+                message.isGhostDeleted = deleted;
+                message.isGhostEdited = edited;
+                onLoaded.run();
+            }
+        };
+        ArrayList<Runnable> pending = pendingDecorations.get(key);
+        if (pending != null) {
+            pending.add(apply);
+            return;
+        }
+        pending = new ArrayList<>();
+        pending.add(apply);
+        pendingDecorations.put(key, pending);
+        final int generation = decorationGeneration;
+        Utilities.globalQueue.postRunnable(() -> {
+            int flagsResult = 0;
+            try (Cursor cursor = db.getReadableDatabase().rawQuery(
+                    "SELECT 1 FROM deleted_messages WHERE account = ? AND message_id = ? AND channel_id = ? LIMIT 1",
+                    new String[]{String.valueOf(account), String.valueOf(messageId), String.valueOf(channelId)})) {
+                if (cursor.moveToFirst()) flagsResult |= 1;
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
+            try (Cursor cursor = db.getReadableDatabase().rawQuery(
+                    "SELECT 1 FROM edit_history WHERE account = ? AND message_id = ? AND channel_id = ? LIMIT 1",
+                    new String[]{String.valueOf(account), String.valueOf(messageId), String.valueOf(dialogId)})) {
+                if (cursor.moveToFirst()) flagsResult |= 2;
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
+            final int result = flagsResult;
+            AndroidUtilities.runOnUIThread(() -> {
+                if (generation == decorationGeneration) {
+                    decorationCache.put(key, result);
+                }
+                ArrayList<Runnable> callbacks = pendingDecorations.remove(key);
+                if (callbacks != null) {
+                    for (Runnable callback : callbacks) callback.run();
+                }
+            });
+        });
     }
 
     /**
@@ -86,6 +165,7 @@ public class AntiDeleteManager {
             values.put("account", currentAccount);
             values.put("deleted_time", System.currentTimeMillis());
             sqlDb.insertWithOnConflict("deleted_messages", null, values, SQLiteDatabase.CONFLICT_REPLACE);
+            invalidateDecorations();
         } catch (Exception e) {
             FileLog.e(TAG + ": error saving deleted message id", e);
         }
@@ -118,6 +198,7 @@ public class AntiDeleteManager {
             values.put("original_text", originalText);
             values.put("edit_time", System.currentTimeMillis());
             sqlDb.insert("edit_history", null, values);
+            invalidateDecorations();
             FileLog.d(TAG + ": saved edit history for msg " + messageId);
         } catch (Exception e) {
             FileLog.e(TAG + ": error saving edit history", e);
@@ -247,4 +328,3 @@ public class AntiDeleteManager {
         }
     }
 }
-
