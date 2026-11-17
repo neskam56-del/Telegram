@@ -124,6 +124,8 @@ public class GhostgramSettingsActivity extends BaseFragment {
         hidePhoneNumberRow = rowCount++;
         customPhoneRow = rowCount++;
         customPhoneValueRow = rowCount++;
+        checkUpdatesRow = rowCount++;
+        updateWifiOnlyRow = rowCount++;
         extraShadowRow = rowCount++;
 
         // Voice changer
@@ -431,6 +433,8 @@ public class GhostgramSettingsActivity extends BaseFragment {
                         int i = GhostConfig.deviceSpoofIndex;
                         String name = i >= 0 && i < GhostConfig.DEVICE_PRESETS.length ? GhostConfig.DEVICE_PRESETS[i][0] : "";
                         cell.setTextAndValue("Пресет устройства", name, false);
+                    } else if (position == checkUpdatesRow) {
+                        cell.setTextAndValue("Проверить обновления", "v" + org.telegram.ghostgram.update.GhostUpdateManager.installedVersionName() + " (" + org.telegram.ghostgram.update.GhostUpdateManager.installedVersionCode() + ")", true);
                     }
                     break;
                 }
