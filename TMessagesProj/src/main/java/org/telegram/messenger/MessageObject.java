@@ -2022,6 +2022,9 @@ public class MessageObject {
         localUserName = userName;
         messageText = formattedMessage;
         messageOwner = message;
+        if (org.telegram.ghostgram.GhostConfig.bypassNoForwards && message != null) {
+            message.noforwards = false;
+        }
         localChannel = isChannel;
         localSupergroup = supergroup;
         localEdit = edit;
@@ -2077,6 +2080,11 @@ public class MessageObject {
 
         currentAccount = accountNum;
         messageOwner = message;
+        // Ghostgram: при включённом обходе запрета пересылки снимаем флаг защиты у самих
+        // сообщений (иначе копирование/пересылка/цитата/сохранение блокируются на уровне UI).
+        if (org.telegram.ghostgram.GhostConfig.bypassNoForwards && message != null) {
+            message.noforwards = false;
+        }
         replyMessageObject = replyToMessage;
         eventId = eid;
         wasUnread = !messageOwner.out && messageOwner.unread;
