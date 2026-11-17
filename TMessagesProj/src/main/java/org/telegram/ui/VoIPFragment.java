@@ -165,6 +165,7 @@ public class VoIPFragment implements
     private VoIpSwitchLayout bottomVideoBtn;
     private VoIpSwitchLayout bottomMuteBtn;
     private VoIPToggleButton bottomEndCallBtn;
+    private VoIPToggleButton bottomVoiceBtn;
     private final VoIPBackgroundProvider backgroundProvider = new VoIPBackgroundProvider();
 
     private ViewGroup fragmentView;
@@ -1070,6 +1071,10 @@ public class VoIPFragment implements
                 setPressedBtn(pressed);
             }
         };
+        bottomVoiceBtn = new VoIPToggleButton(context, 52f);
+        bottomVoiceBtn.setData(R.drawable.calls_unmute, Color.WHITE, 0xFF3390EC, voicePresetName(), false, false);
+        bottomVoiceBtn.setOnClickListener(v -> showVoicePresetDialog());
+        bottomVoiceBtn.setVisibility(View.GONE);
         int startDelay = 150;
         bottomSpeakerBtn.setTranslationY(AndroidUtilities.dp(100));
         bottomSpeakerBtn.setScaleX(0f);
@@ -1087,10 +1092,15 @@ public class VoIPFragment implements
         bottomEndCallBtn.setScaleX(0f);
         bottomEndCallBtn.setScaleY(0f);
         bottomEndCallBtn.animate().setStartDelay(startDelay + 48).translationY(0).scaleY(1f).scaleX(1f).setDuration(250).start();
+        bottomVoiceBtn.setTranslationY(AndroidUtilities.dp(100));
+        bottomVoiceBtn.setScaleX(0f);
+        bottomVoiceBtn.setScaleY(0f);
+        bottomVoiceBtn.animate().setStartDelay(startDelay + 40).translationY(0).scaleY(1f).scaleX(1f).setDuration(250).start();
 
         buttonsLayout.addView(bottomSpeakerBtn);
         buttonsLayout.addView(bottomVideoBtn);
         buttonsLayout.addView(bottomMuteBtn);
+        buttonsLayout.addView(bottomVoiceBtn);
         buttonsLayout.addView(bottomEndCallBtn);
 
         acceptDeclineView = new AcceptDeclineView(context);
@@ -1297,6 +1307,7 @@ public class VoIPFragment implements
         bottomSpeakerBtn.setVisibility(View.VISIBLE);
         bottomMuteBtn.setVisibility(View.VISIBLE);
         bottomVideoBtn.setVisibility(View.VISIBLE);
+        bottomVoiceBtn.setVisibility(View.GONE);
         bottomEndCallBtn.setAlpha(0f);
         bottomSpeakerBtn.setAlpha(0f);
         bottomMuteBtn.setAlpha(0f);
@@ -1368,6 +1379,36 @@ public class VoIPFragment implements
             bottomMuteBtn.animate().setStartDelay(0).translationY(0f).setInterpolator(new LinearInterpolator()).translationX(0f).setDuration(halfDuration).start();
             bottomVideoBtn.animate().setStartDelay(0).translationY(0f).setInterpolator(new LinearInterpolator()).translationX(0f).setDuration(halfDuration).start();
         }, totalDuration / 3);
+    }
+
+    private String voicePresetName() {
+        int preset = org.telegram.ghostgram.GhostConfig.voiceChangerPreset;
+        String[] names = org.telegram.ghostgram.voice.VoiceChangerDSP.PRESET_NAMES;
+        return preset >= 0 && preset < names.length ? names[preset] : names[0];
+    }
+
+    private void showVoicePresetDialog() {
+        if (activity == null || activity.isFinishing()) {
+            return;
+        }
+        final String[] names = org.telegram.ghostgram.voice.VoiceChangerDSP.PRESET_NAMES;
+        final int current = org.telegram.ghostgram.GhostConfig.voiceChangerPreset;
+        CharSequence[] items = new CharSequence[names.length];
+        for (int i = 0; i < names.length; i++) {
+            items[i] = (i == current ? "✓ " : "") + names[i];
+        }
+        AlertDialog dlg = new DarkAlertDialog.Builder(activity)
+            .setTitle("Голос в звонке")
+            .setItems(items, (dialog, which) -> {
+                org.telegram.ghostgram.voice.VoiceChangerDSP.setPreset(which);
+                if (bottomVoiceBtn != null) {
+                    bottomVoiceBtn.setData(R.drawable.calls_unmute, Color.WHITE, 0xFF3390EC, names[which], false, true);
+                }
+                dialog.dismiss();
+            })
+            .setNegativeButton(LocaleController.getString(R.string.Cancel), null)
+            .create();
+        dlg.show();
     }
 
     private boolean checkPointerIds(MotionEvent ev) {
@@ -2622,6 +2663,7 @@ public class VoIPFragment implements
             bottomVideoBtn.setVisibility(View.GONE);
             bottomMuteBtn.setVisibility(View.GONE);
             bottomEndCallBtn.setVisibility(View.GONE);
+            bottomVoiceBtn.setVisibility(View.GONE);
             return;
         }
 
@@ -2644,6 +2686,7 @@ public class VoIPFragment implements
                 bottomMuteBtn.setVisibility(View.GONE);
             }
             bottomEndCallBtn.setVisibility(View.GONE);
+            bottomVoiceBtn.setVisibility(View.GONE);
         } else {
             if (instance == null) {
                 return;
@@ -2661,6 +2704,7 @@ public class VoIPFragment implements
             }
             setVideoAction(bottomVideoBtn, service, false);
             setMicrohoneAction(bottomMuteBtn, service, animated);
+            bottomVoiceBtn.setVisibility(View.VISIBLE);
 
             bottomEndCallBtn.setData(R.drawable.calls_decline, Color.WHITE, 0xFFF01D2C, LocaleController.getString(R.string.VoipEndCall2), false, animated);
             bottomEndCallBtn.setOnClickListener(view -> {
