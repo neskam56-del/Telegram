@@ -121,6 +121,13 @@ public class EditTextBoldCursor extends EditTextEffects {
     private float hintAlpha = 1.0f;
     private long hintLastUpdateTime;
     private boolean allowDrawCursor = true;
+    private boolean typingCursorAnimationEnabled;
+    private boolean typingHintAnimationEnabled;
+    private boolean typingHintHasText;
+    private float typingHintOffsetX;
+    private long typingHintAnimationStart;
+    private float typingHintAnimationFrom;
+    private float typingHintAnimationTo;
     private boolean forceCursorEnd = false;
     private float cursorWidth = 2.0f;
     private boolean supportRtlHint;
@@ -316,7 +323,7 @@ public class EditTextBoldCursor extends EditTextEffects {
             @Override
             public void draw(Canvas canvas) {
                 super.draw(canvas);
-                cursorDrawn = true;
+                cursorDrawn = !typingCursorAnimationEnabled;
             }
         };
         shapeDrawable.getPaint().setColor(0);
@@ -345,7 +352,7 @@ public class EditTextBoldCursor extends EditTextEffects {
                 @Override
                 public void draw(Canvas canvas) {
                     if (drawInMaim) {
-                        cursorDrawn = true;
+                        cursorDrawn = !typingCursorAnimationEnabled;
                     } else {
                         super.draw(canvas);
                     }
@@ -465,6 +472,35 @@ public class EditTextBoldCursor extends EditTextEffects {
 
     public void setAllowDrawCursor(boolean value) {
         allowDrawCursor = value;
+        invalidate();
+    }
+
+    public void setTypingCursorAnimationEnabled(boolean enabled) {
+        typingCursorAnimationEnabled = enabled;
+        setAllowDrawCursor(!enabled);
+        if (enabled) {
+            cursorDrawn = false;
+        }
+    }
+
+    public void setTypingHintAnimationEnabled(boolean enabled) {
+        typingHintAnimationEnabled = enabled;
+        typingHintHasText = getText() != null && getText().length() > 0;
+        typingHintOffsetX = typingHintHasText ? -dp(6) : 0;
+        typingHintAnimationFrom = typingHintOffsetX;
+        typingHintAnimationTo = typingHintOffsetX;
+    }
+
+    public void setTypingHintHasText(boolean hasText) {
+        if (!typingHintAnimationEnabled || typingHintHasText == hasText) {
+            return;
+        }
+        typingHintHasText = hasText;
+        typingHintAnimationFrom = typingHintOffsetX;
+        typingHintAnimationTo = hasText ? -dp(6) : 0;
+        typingHintAnimationStart = SystemClock.uptimeMillis();
+        hintAlpha = 1f;
+        hintVisible = true;
         invalidate();
     }
 
@@ -813,8 +849,21 @@ public class EditTextBoldCursor extends EditTextEffects {
     public int hintLayoutOffset;
 
     private void drawHint(Canvas canvas) {
-        if (length() != 0 && !transformHintToHeader) {
+        if (length() != 0 && !transformHintToHeader && !typingHintAnimationEnabled) {
             return;
+        }
+        float typingHintAlpha = 1f;
+        if (typingHintAnimationEnabled) {
+            float progress = Math.min(1f, Math.max(0f, (SystemClock.uptimeMillis() - typingHintAnimationStart) / 140f));
+            float eased = 1f - (1f - progress) * (1f - progress);
+            typingHintOffsetX = typingHintAnimationFrom + (typingHintAnimationTo - typingHintAnimationFrom) * eased;
+            typingHintAlpha = typingHintHasText ? 1f - eased : eased;
+            if (progress < 1f) {
+                invalidate();
+            }
+            if (typingHintAlpha <= 0f && !transformHintToHeader) {
+                return;
+            }
         }
         if (hintVisible && hintAlpha != 1.0f || !hintVisible && hintAlpha != 0.0f) {
             long newTime = System.currentTimeMillis();
@@ -856,8 +905,11 @@ public class EditTextBoldCursor extends EditTextEffects {
             } else {
                 hintAnimatedDrawable.setRightPadding(0);
             }
-            hintAnimatedDrawable.setAlpha((int) (Color.alpha(hintColor) * hintAlpha));
+            hintAnimatedDrawable.setAlpha((int) (Color.alpha(hintColor) * hintAlpha * typingHintAlpha));
+            canvas.save();
+            canvas.translate(typingHintOffsetX, 0);
             hintAnimatedDrawable.draw(canvas);
+            canvas.restore();
         } else if (hintLayout != null && (hintVisible || hintAlpha != 0)) {
             int oldColor = getPaint().getColor();
 
@@ -872,7 +924,7 @@ public class EditTextBoldCursor extends EditTextEffects {
                 float offset = getMeasuredWidth() - hintWidth;
                 canvas.translate(hintLayoutX = left + getScrollX() + offset, hintLayoutY = lineY - hintLayout.getHeight() - dp(7));
             } else {
-                canvas.translate(hintLayoutX = left + getScrollX()+ hintLayoutOffset, hintLayoutY = lineY - hintLayout.getHeight() - AndroidUtilities.dp2(7));
+                canvas.translate(hintLayoutX = left + getScrollX() + hintLayoutOffset + typingHintOffsetX, hintLayoutY = lineY - hintLayout.getHeight() - AndroidUtilities.dp2(7));
             }
             if (transformHintToHeader) {
                 float scale = 1.0f - 0.3f * headerAnimationProgress;
@@ -887,7 +939,7 @@ public class EditTextBoldCursor extends EditTextEffects {
                 getPaint().setColor(ColorUtils.blendARGB(hintColor, headerHintColor, headerAnimationProgress));
             } else {
                 getPaint().setColor(hintColor);
-                getPaint().setAlpha((int) (255 * hintAlpha * (Color.alpha(hintColor) / 255.0f)));
+                getPaint().setAlpha((int) (255 * hintAlpha * typingHintAlpha * (Color.alpha(hintColor) / 255.0f)));
             }
             if (hintAnimator != null && hintAnimator.animateTextChange) {
                 canvas.save();

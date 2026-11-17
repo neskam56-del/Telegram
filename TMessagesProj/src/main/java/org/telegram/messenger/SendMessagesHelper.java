@@ -4528,6 +4528,9 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
 
         final long payStars = ephemeralReceiverBotId != 0 ? 0 : _payStars;
         if (payStars != sendMessageParams.payStars && !isGroup && ephemeralReceiverBotId == 0) {
+            if (org.telegram.ghostgram.RepeatMessages.isRepeatMessage(sendMessageParams)) {
+                return;
+            }
             AlertsCreator.ensurePaidMessageConfirmation(currentAccount, peer, 1, newPayStars -> {
                 sendMessageParams.payStars = newPayStars;
                 sendMessage(sendMessageParams);
@@ -5323,6 +5326,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 reply = null;
             }
             newMsgObj = new MessageObject(currentAccount, newMsg, reply, true, true);
+            org.telegram.ghostgram.RepeatMessages.onLocalMessage(currentAccount, newMsgObj);
             newMsgObj.sendAnimationData = sendAnimationData;
             newMsgObj.wasJustSent = true;
             newMsgObj.sentHighQuality = sendMessageParams.sendingHighQuality;
@@ -5393,7 +5397,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         TLRPC.TL_messages_sendMedia reqSend = new TLRPC.TL_messages_sendMedia();
                         reqSend.ephemeralReceiverBotId = ephemeralReceiverBotId;
                         reqSend.message = message;
-                        reqSend.clear_draft = retryMessageObject == null;
+                        reqSend.clear_draft = retryMessageObject == null && org.telegram.ghostgram.RepeatMessages.shouldClearDraft(sendMessageParams);
                         reqSend.silent = newMsg.silent;
                         reqSend.peer = sendToPeer;
                         reqSend.random_id = newMsg.random_id;
@@ -5451,14 +5455,14 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             StarsController.getInstance(currentAccount).beforeSendingMessage(newMsgObj);
                         }
                         performSendMessageRequest(reqSend, newMsgObj, null, null, parentObject, params, scheduleDate != 0);
-                        if (retryMessageObject == null) {
+                        if (reqSend.clear_draft) {
                             getMediaDataController().cleanDraft(peer, replyToTopMsg != null ? replyToTopMsg.getId() : 0, false);
                         }
                     } else {
                         final TLRPC.TL_messages_sendMessage reqSend = new TLRPC.TL_messages_sendMessage();
                         reqSend.ephemeralReceiverBotId = ephemeralReceiverBotId;
                         reqSend.message = message;
-                        reqSend.clear_draft = retryMessageObject == null;
+                        reqSend.clear_draft = retryMessageObject == null && org.telegram.ghostgram.RepeatMessages.shouldClearDraft(sendMessageParams);
                         reqSend.silent = newMsg.silent;
                         reqSend.peer = sendToPeer;
                         reqSend.random_id = newMsg.random_id;
@@ -5514,7 +5518,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             StarsController.getInstance(currentAccount).beforeSendingMessage(newMsgObj);
                         }
                         performSendMessageRequest(reqSend, newMsgObj, null, null, parentObject, params, scheduleDate != 0);
-                        if (retryMessageObject == null) {
+                        if (reqSend.clear_draft) {
                             getMediaDataController().cleanDraft(peer, replyToTopMsg != null ? replyToTopMsg.getId() : 0, false);
                         }
                     }
@@ -8553,6 +8557,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                                         getNotificationCenter().postNotificationName(NotificationCenter.messageReceivedByServer2, oldId, newMsgObj.id, newMsgObj, newMsgObj.dialog_id, 0L, existFlags, scheduled);
                                         processSentMessage(oldId);
                                         removeFromSendingMessages(oldId, scheduled);
+                                        org.telegram.ghostgram.RepeatMessages.onMessageStored(currentAccount, params, oldId, newMsgObj.id);
                                     });
                                 });
                             }

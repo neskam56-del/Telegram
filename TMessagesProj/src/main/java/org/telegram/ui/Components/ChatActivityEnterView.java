@@ -173,6 +173,7 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ghostgram.ui.TypingAnimationController;
 import org.telegram.ui.ActionBar.ThemeBind;
 import org.telegram.ui.BasePermissionsActivity;
 import org.telegram.ui.Business.BusinessLinksController;
@@ -591,6 +592,7 @@ public class ChatActivityEnterView extends FrameLayout implements
 
     @Nullable
     public EditTextCaption messageEditText;
+    private TypingAnimationController typingAnimationController;
     private SlowModeBtn slowModeButton;
     private int slowModeTimer;
     private Runnable updateSlowModeRunnable;
@@ -5547,6 +5549,10 @@ public class ChatActivityEnterView extends FrameLayout implements
         @Override
         protected void onSelectionChanged(int selStart, int selEnd) {
             super.onSelectionChanged(selStart, selEnd);
+            TypingAnimationController controller = getTypingAnimationController();
+            if (controller != null) {
+                controller.onSelectionChanged(selStart, selEnd);
+            }
             if (delegate != null) {
                 delegate.onTextSelectionChanged(selStart, selEnd);
             }
@@ -5741,6 +5747,14 @@ public class ChatActivityEnterView extends FrameLayout implements
         messageEditText.setWindowView(mCustomWindowView);
     }
 
+    // Ghostgram: ленивая инициализация анимации ввода для поля сообщения.
+    private TypingAnimationController getTypingAnimationController() {
+        if (typingAnimationController == null && messageEditText != null && !destroyed) {
+            typingAnimationController = new TypingAnimationController(messageEditText);
+        }
+        return typingAnimationController;
+    }
+
     private void createMessageEditText() {
         if (messageEditText != null) {
             return;
@@ -5752,6 +5766,11 @@ public class ChatActivityEnterView extends FrameLayout implements
             @Override
             protected void onDraw(Canvas canvas) {
                 super.onDraw(canvas);
+                // Ghostgram: частицы удаления и светящийся курсор поверх текста.
+                TypingAnimationController controller = getTypingAnimationController();
+                if (controller != null) {
+                    controller.draw(canvas);
+                }
                 if (getLayout() != null && firstDraw) {
                     firstDraw = false;
                     checkSendButton(true);
@@ -5878,6 +5897,7 @@ public class ChatActivityEnterView extends FrameLayout implements
         ThemeBind.cursorColor(messageEditText, Theme.key_chat_messagePanelCursor, resourcesProvider);
         ThemeBind.editHandlesColor(messageEditText, Theme.key_chat_TextSelectionCursor, resourcesProvider);
         messageEditTextContainer.addView(messageEditText, 1, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM, 52, 0, isChat ? 50 : 2, 1.5f));
+        getTypingAnimationController();
 
         richDraftPreview = new RichMessageLayout.PreviewView(getContext(), currentAccount, resourcesProvider);
         richDraftPreview.setAllowActions(false);
@@ -6585,6 +6605,10 @@ public class ChatActivityEnterView extends FrameLayout implements
     }
 
     public void onDestroy() {
+        if (typingAnimationController != null) {
+            typingAnimationController.release();
+            typingAnimationController = null;
+        }
         if (audioTimelineView != null) {
             audioTimelineView.destroy();
         }
@@ -7352,7 +7376,28 @@ public class ChatActivityEnterView extends FrameLayout implements
         isRecordingStateChanged();
     }
 
+    private boolean handleRepeatCommand(int scheduleDate) {
+        if (messageEditText == null) return false;
+        CharSequence value = messageEditText.getTextToUse();
+        String text = value == null ? "" : value.toString().trim();
+        if (!org.telegram.ghostgram.RepeatMessages.isCommand(text)) return false;
+        if (parentFragment == null || parentFragment.getChatMode() != ChatActivity.MODE_DEFAULT ||
+                isInScheduleMode() || scheduleDate != 0 || editingMessageObject != null || richDraftActive ||
+                audioToSend != null || videoToSendMessageObject != null ||
+                delegate != null && delegate.hasForwardingMessages()) {
+            android.widget.Toast.makeText(getContext(), "Команда доступна только при обычной отправке текста", android.widget.Toast.LENGTH_SHORT).show();
+            return true;
+        } else {
+            org.telegram.ghostgram.RepeatMessages.handle(currentAccount, dialog_id, text);
+        }
+        messageEditText.setText("");
+        return true;
+    }
+
     public boolean sendMessage() {
+        if (handleRepeatCommand(0)) {
+            return false;
+        }
         if (richDraftActive && !UserConfig.getInstance(currentAccount).isPremium()) {
             RichEditor.openConversionSheet(getContext(), this::openRichEditorWithoutFormatting, () -> {
                 if (parentFragment != null) {
@@ -7379,6 +7424,9 @@ public class ChatActivityEnterView extends FrameLayout implements
     }
 
     protected boolean sendMessageInternal(boolean notify, int scheduleDate, int scheduleRepeatPeriod, long payStars, boolean allowConfirm) {
+        if (handleRepeatCommand(scheduleDate)) {
+            return false;
+        }
         final boolean allowConfirmFinal = allowConfirm && !animatorEphemeralMessageVisibility.getValue();
 
         final Runnable send = () -> {
