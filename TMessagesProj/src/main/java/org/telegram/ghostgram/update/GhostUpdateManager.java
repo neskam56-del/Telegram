@@ -173,6 +173,9 @@ public final class GhostUpdateManager {
      */
     public static void check(final boolean force, final Activity activity, final boolean showLatestBulletin) {
         if (checking) {
+            if (showLatestBulletin) {
+                showInfo(activity, "Проверка уже выполняется…");
+            }
             return;
         }
         if (!force && System.currentTimeMillis() - GhostConfig.lastUpdateCheckTime < CHECK_INTERVAL_MS) {
@@ -184,17 +187,21 @@ public final class GhostUpdateManager {
         final String url = GhostConfig.updateManifestUrl;
         if (TextUtils.isEmpty(url)) {
             if (showLatestBulletin) {
-                showLatest(activity);
+                showInfo(activity, "Не задан адрес манифеста обновлений");
             }
             return;
+        }
+        if (force && showLatestBulletin) {
+            showInfo(activity, "Проверяю обновления…");
         }
         checking = true;
         new Thread(() -> {
             GhostUpdate found = null;
             boolean fetched = false;
             try {
-                JSONObject json = new JSONObject(httpGet(url));
+                String body = httpGet(url);
                 fetched = true;
+                JSONObject json = new JSONObject(body);
                 GhostUpdate update = new GhostUpdate();
                 update.versionCode = json.optInt("versionCode", 0);
                 update.versionName = json.optString("versionName", "");
@@ -209,6 +216,7 @@ public final class GhostUpdateManager {
                 FileLog.e(e);
             }
             final GhostUpdate result = found;
+            final boolean didFetch = fetched;
             if (fetched) {
                 GhostConfig.lastUpdateCheckTime = System.currentTimeMillis();
                 GhostConfig.saveConfig();
@@ -219,14 +227,18 @@ public final class GhostUpdateManager {
                     pending = result;
                     NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.appUpdateAvailable);
                     if (activity != null && !activity.isFinishing()
-                            && (result.mandatory || result.versionCode != GhostConfig.ignoredUpdateVersionCode)
+                            && (force || result.mandatory || result.versionCode != GhostConfig.ignoredUpdateVersionCode)
                             && !GhostUpdateDialog.isShowing()) {
                         GhostUpdateDialog.showAvailable(activity, result);
                     }
                 } else {
                     pending = null;
                     if (showLatestBulletin) {
-                        showLatest(activity);
+                        if (didFetch) {
+                            showLatest(activity);
+                        } else {
+                            showInfo(activity, "Не удалось проверить обновления");
+                        }
                     }
                 }
             });
@@ -364,12 +376,16 @@ public final class GhostUpdateManager {
     }
 
     private static void showLatest(Activity activity) {
+        showInfo(activity, LocaleController.getString(R.string.YourVersionIsLatest));
+    }
+
+    private static void showInfo(Activity activity, CharSequence text) {
         if (activity == null || activity.isFinishing()) {
             return;
         }
         try {
             BulletinFactory.global()
-                    .createSimpleBulletin(R.raw.chats_infotip, LocaleController.getString(R.string.YourVersionIsLatest))
+                    .createSimpleBulletin(R.raw.chats_infotip, text)
                     .show();
         } catch (Throwable e) {
             FileLog.e(e);

@@ -194,6 +194,9 @@ public class GhostgramSettingsActivity extends BaseFragment {
             } else if (position == customPhoneValueRow) {
                 showCustomPhoneDialog();
                 return;
+            } else if (position == checkUpdatesRow) {
+                org.telegram.ghostgram.update.GhostUpdateManager.check(true, getParentActivity(), true);
+                return;
             }
             if (!(view instanceof TextCheckCell)) return;
             TextCheckCell cell = (TextCheckCell) view;
@@ -257,8 +260,6 @@ public class GhostgramSettingsActivity extends BaseFragment {
             } else if (position == updateWifiOnlyRow) {
                 GhostConfig.updateWifiOnly = !GhostConfig.updateWifiOnly;
                 cell.setChecked(GhostConfig.updateWifiOnly);
-            } else if (position == checkUpdatesRow) {
-                org.telegram.ghostgram.update.GhostUpdateManager.check(true, getParentActivity(), true);
             }
             GhostConfig.saveConfig();
         });
