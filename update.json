@@ -1,8 +1,8 @@
 {
-  "versionCode": 72959,
-  "versionName": "13.2.4",
-  "apkUrl": "https://github.com/neskam56-del/Telegram/releases/download/v72959/app.apk",
-  "sha256": "0F1CEF690FF86C34A6E6E6A58C95195C854DC084D5C27CB6A8E4EADB919F5FBA",
-  "changelog": "— исправления и улучшения\n— новая иконка приложения\n— кнопка смены голоса прямо в звонке\n— анимация ввода текста и светящийся курсор\n— убраны метки «local» у локальных подарков и NFT-юзернеймов\n— в настройках: ручная проверка обновлений и загрузка только по Wi-Fi",
+  "versionCode": 72969,
+  "versionName": "13.2.5",
+  "apkUrl": "https://github.com/neskam56-del/Telegram/releases/download/v72969/app.apk",
+  "sha256": "08746F7874C62E02B845A19EAABAFBFCAEA9B6EDE6EF7D7F136D34B950EB9AE2",
+  "changelog": "— новый логотип на экране запуска\n— исправления и улучшения\n— новая иконка приложения\n— кнопка смены голоса прямо в звонке\n— анимация ввода текста и светящийся курсор\n— убраны метки «local» у локальных подарков и NFT-юзернеймов",
   "mandatory": false
 }
